@@ -25,20 +25,22 @@ async function main() {
   console.log('✅ Existing data cleaned\n');
 
   // ============================================
-  // Admin Account (DEMO - Change before production!)
+  // Admin Account
   // ============================================
-  const passwordHash = await bcrypt.hash('ChangeMe123!', 12);
+  const adminEmail = process.env.ADMIN_EMAIL || 'admin@example.com';
+  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+  const passwordHash = await bcrypt.hash(adminPassword, 12);
   const admin = await prisma.admin.upsert({
-    where: { email: 'admin@example.com' },
+    where: { email: adminEmail },
     update: {},
     create: {
-      email: 'admin@example.com',
+      email: adminEmail,
       passwordHash,
       name: 'Admin',
       role: 'super_admin',
     },
   });
-  console.log('✅ Admin account created: admin@example.com / ChangeMe123!');
+  console.log(`✅ Admin account created: ${adminEmail}`);
 
   // ============================================
   // Services
