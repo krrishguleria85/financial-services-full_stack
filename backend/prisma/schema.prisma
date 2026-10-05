@@ -1,0 +1,284 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// Admin / Authentication
+// ============================================
+model Admin {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   @default("admin") // admin, super_admin
+  isActive     Boolean  @default(true)
+  lastLogin    DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  notes      AdminNote[]
+  auditLogs  AuditLog[]
+}
+
+// ============================================
+// Customer
+// ============================================
+model Customer {
+  id        String   @id @default(uuid())
+  name      String
+  email     String?
+  phone     String
+  address   String?
+  city      String?
+  state     String?
+  pincode   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  serviceRequests ServiceRequest[]
+  appointments    Appointment[]
+  documents       Document[]
+  notes           AdminNote[]
+}
+
+// ============================================
+// Services
+// ============================================
+model Service {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  category    String   // lic, itr, gst, consultation, documentation
+  description String
+  longDescription String?
+  icon        String?  // icon name from lucide-react
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  serviceRequests ServiceRequest[]
+  appointments    Appointment[]
+}
+
+// ============================================
+// Service Requests
+// ============================================
+model ServiceRequest {
+  id            String   @id @default(uuid())
+  requestId     String   @unique // REQ-2026-0001 format
+  customerId    String
+  serviceId     String
+  status        String   @default("NEW") // NEW, DOCUMENTS_REQUIRED, DOCUMENTS_RECEIVED, UNDER_REVIEW, IN_PROGRESS, COMPLETED, CANCELLED
+  
+  // Additional form data stored as JSON
+  formData      String?  // JSON string for flexible form data
+  message       String?
+  
+  // ITR specific
+  assessmentYear String?
+  incomeType     String?
+  panEncrypted   String?
+  
+  // GST specific
+  businessName   String?
+  gstStatus      String?
+  
+  // LIC specific
+  policyNumber   String?
+  
+  priority       String   @default("normal") // low, normal, high, urgent
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customer       Customer         @relation(fields: [customerId], references: [id])
+  service        Service          @relation(fields: [serviceId], references: [id])
+  documents      Document[]
+  statusHistory  RequestStatusHistory[]
+  notes          AdminNote[]
+}
+
+// ============================================
+// Request Status History
+// ============================================
+model RequestStatusHistory {
+  id              String   @id @default(uuid())
+  serviceRequestId String
+  oldStatus       String?
+  newStatus       String
+  note            String?
+  changedBy       String?  // admin id or "system"
+  createdAt       DateTime @default(now())
+
+  serviceRequest  ServiceRequest @relation(fields: [serviceRequestId], references: [id])
+}
+
+// ============================================
+// Appointments
+// ============================================
+model Appointment {
+  id          String   @id @default(uuid())
+  customerId  String
+  serviceId   String?
+  date        String   // YYYY-MM-DD
+  time        String   // HH:MM
+  status      String   @default("PENDING") // PENDING, CONFIRMED, RESCHEDULED, COMPLETED, CANCELLED
+  message     String?
+  adminNote   String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  customer    Customer  @relation(fields: [customerId], references: [id])
+  service     Service?  @relation(fields: [serviceId], references: [id])
+}
+
+// ============================================
+// Documents
+// ============================================
+model Document {
+  id              String   @id @default(uuid())
+  customerId      String
+  serviceRequestId String?
+  documentType    String   // pan, aadhaar, form16, bank_statement, etc.
+  originalName    String
+  storedName      String   // UUID-based stored filename
+  mimeType        String
+  fileSize        Int
+  status          String   @default("UPLOADED") // UPLOADED, VERIFIED, REJECTED
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  customer        Customer       @relation(fields: [customerId], references: [id])
+  serviceRequest  ServiceRequest? @relation(fields: [serviceRequestId], references: [id])
+}
+
+// ============================================
+// Contact Enquiries
+// ============================================
+model ContactEnquiry {
+  id        String   @id @default(uuid())
+  name      String
+  phone     String
+  email     String?
+  service   String?
+  message   String
+  isRead    Boolean  @default(false)
+  isResolved Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================
+// YouTube Videos
+// ============================================
+model YouTubeVideo {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  videoUrl    String
+  videoId     String?  // YouTube video ID extracted from URL
+  thumbnailUrl String?
+  isPublished Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  publishedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// Blog Posts
+// ============================================
+model BlogPost {
+  id          String   @id @default(uuid())
+  title       String
+  slug        String   @unique
+  content     String
+  excerpt     String?
+  category    String   // itr, gst, insurance, tax_tips, financial_awareness
+  isPublished Boolean  @default(false)
+  authorName  String   @default("Admin")
+  
+  publishedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// Testimonials
+// ============================================
+model Testimonial {
+  id          String   @id @default(uuid())
+  name        String
+  location    String?
+  rating      Int      @default(5)
+  content     String
+  service     String?
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// Admin Notes
+// ============================================
+model AdminNote {
+  id              String   @id @default(uuid())
+  adminId         String
+  customerId      String?
+  serviceRequestId String?
+  content         String
+  createdAt       DateTime @default(now())
+
+  admin           Admin          @relation(fields: [adminId], references: [id])
+  customer        Customer?      @relation(fields: [customerId], references: [id])
+  serviceRequest  ServiceRequest? @relation(fields: [serviceRequestId], references: [id])
+}
+
+// ============================================
+// Notifications
+// ============================================
+model Notification {
+  id        String   @id @default(uuid())
+  type      String   // admin, customer
+  targetId  String?  // admin id or customer id
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+}
+
+// ============================================
+// Business Settings
+// ============================================
+model BusinessSetting {
+  id    String @id @default(uuid())
+  key   String @unique
+  value String
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================
+// Audit Log
+// ============================================
+model AuditLog {
+  id          String   @id @default(uuid())
+  adminId     String
+  action      String
+  entityType  String   // service_request, customer, appointment, etc.
+  entityId    String?
+  oldValue    String?  // JSON
+  newValue    String?  // JSON
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  admin       Admin    @relation(fields: [adminId], references: [id])
+}
