@@ -9,16 +9,19 @@ async function main() {
   // Clean existing data (order matters due to foreign keys)
   console.log('🧹 Cleaning existing data...');
   await prisma.requestStatusHistory.deleteMany();
-  await prisma.requestDocument.deleteMany();
+  await prisma.document.deleteMany();
+  await prisma.adminNote.deleteMany();
   await prisma.serviceRequest.deleteMany();
   await prisma.appointment.deleteMany();
   await prisma.testimonial.deleteMany();
+  await prisma.contactEnquiry.deleteMany();
   await prisma.customer.deleteMany();
   await prisma.blogPost.deleteMany();
+  await prisma.youTubeVideo.deleteMany();
   await prisma.service.deleteMany();
   await prisma.businessSetting.deleteMany();
+  await prisma.auditLog.deleteMany();
   await prisma.admin.deleteMany();
-  await prisma.importantDeadline.deleteMany();
   console.log('✅ Existing data cleaned\n');
 
   // ============================================
