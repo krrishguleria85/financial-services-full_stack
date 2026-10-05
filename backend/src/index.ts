@@ -75,14 +75,10 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Serve frontend in production
-if (config.nodeEnv === 'production') {
-  const frontendPath = path.resolve(__dirname, '../../frontend/dist');
-  app.use(express.static(frontendPath));
-  app.get('*', (_req, res) => {
-    res.sendFile(path.join(frontendPath, 'index.html'));
-  });
-}
+// Root route
+app.get('/', (_req, res) => {
+  res.json({ message: 'Financial Services API is running', status: 'ok' });
+});
 
 // Global error handler
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
