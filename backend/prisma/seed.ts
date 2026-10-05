@@ -6,6 +6,21 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Seeding database...\n');
 
+  // Clean existing data (order matters due to foreign keys)
+  console.log('🧹 Cleaning existing data...');
+  await prisma.requestStatusHistory.deleteMany();
+  await prisma.requestDocument.deleteMany();
+  await prisma.serviceRequest.deleteMany();
+  await prisma.appointment.deleteMany();
+  await prisma.testimonial.deleteMany();
+  await prisma.customer.deleteMany();
+  await prisma.blogPost.deleteMany();
+  await prisma.service.deleteMany();
+  await prisma.businessSetting.deleteMany();
+  await prisma.admin.deleteMany();
+  await prisma.importantDeadline.deleteMany();
+  console.log('✅ Existing data cleaned\n');
+
   // ============================================
   // Admin Account (DEMO - Change before production!)
   // ============================================
