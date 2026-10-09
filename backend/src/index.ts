@@ -3,6 +3,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
+import bcrypt from 'bcryptjs';
+import prisma from './config/database';
 import { config } from './config';
 
 // Import routes
@@ -18,16 +20,43 @@ import blogRoutes from './routes/blog';
 import testimonialRoutes from './routes/testimonials';
 import settingsRoutes from './routes/settings';
 import adminRoutes from './routes/admin';
+import fs from 'fs';
+
+// Ensure upload directory exists (especially on Render ephemeral environments)
+if (!fs.existsSync(config.upload.dir)) {
+  fs.mkdirSync(config.upload.dir, { recursive: true });
+}
 
 const app = express();
+
+// Trust proxy for Render reverse-proxy (essential for rate-limiting client IPs)
+app.set('trust proxy', 1);
 
 // Security middleware
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 
+const allowedOrigins = [
+  config.frontendUrl,
+  config.frontendUrl.replace(/\/$/, ''),
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:5000',
+].filter(Boolean);
+
 app.use(cors({
-  origin: config.frontendUrl,
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (
+      allowedOrigins.includes(origin) ||
+      allowedOrigins.includes(origin.replace(/\/$/, '')) ||
+      origin.endsWith('.onrender.com')
+    ) {
+      return callback(null, true);
+    }
+    return callback(null, true); // Allow during production transition
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -101,11 +130,89 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   });
 });
 
+async function initDatabase() {
+  try {
+    const adminEmail = process.env.ADMIN_EMAIL;
+    const adminPassword = process.env.ADMIN_PASSWORD;
+
+    if (adminEmail && adminPassword) {
+      const existing = await prisma.admin.findUnique({ where: { email: adminEmail } });
+      if (!existing) {
+        const passwordHash = await bcrypt.hash(adminPassword, 12);
+        await prisma.admin.create({
+          data: {
+            email: adminEmail,
+            passwordHash,
+            name: 'Rajesh Guleria',
+            role: 'super_admin',
+            isActive: true,
+          },
+        });
+        console.log(`✅ Admin account initialized for: ${adminEmail}`);
+      }
+    }
+
+    const serviceCount = await prisma.service.count();
+    if (serviceCount === 0) {
+      console.log('🌱 Populating initial services...');
+      const defaultServices = [
+        {
+          name: 'ITR Filing Assistance',
+          slug: 'itr-filing-assistance',
+          category: 'itr',
+          description: 'Expert assistance for Income Tax Return filing for individuals and businesses.',
+          icon: 'FileText',
+          sortOrder: 1,
+        },
+        {
+          name: 'GST Registration & Returns',
+          slug: 'gst-services',
+          category: 'gst',
+          description: 'Complete GST registration and regular return filing assistance.',
+          icon: 'Building',
+          sortOrder: 2,
+        },
+        {
+          name: 'LIC / Life Insurance',
+          slug: 'lic-insurance',
+          category: 'lic',
+          description: 'Assistance for LIC policies, premiums, and claim processing.',
+          icon: 'Shield',
+          sortOrder: 3,
+        },
+        {
+          name: 'Star Health Insurance',
+          slug: 'star-health-insurance',
+          category: 'health-insurance',
+          description: 'Comprehensive health and medical insurance plans from Star Health.',
+          icon: 'HeartPulse',
+          sortOrder: 4,
+        },
+        {
+          name: 'Tax & Financial Consultation',
+          slug: 'tax-consultation',
+          category: 'consultation',
+          description: 'Personalized tax planning and financial advisory.',
+          icon: 'Calculator',
+          sortOrder: 5,
+        },
+      ];
+      for (const s of defaultServices) {
+        await prisma.service.create({ data: s });
+      }
+      console.log('✅ Default services created');
+    }
+  } catch (err) {
+    console.warn('Database initialization check skipped or failed:', err);
+  }
+}
+
 // Start server
-app.listen(config.port, () => {
+app.listen(config.port, async () => {
   console.log(`\n🚀 Server running on http://localhost:${config.port}`);
   console.log(`📊 Environment: ${config.nodeEnv}`);
   console.log(`🌐 Frontend URL: ${config.frontendUrl}\n`);
+  await initDatabase();
 });
 
 export default app;

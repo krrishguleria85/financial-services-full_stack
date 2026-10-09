@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/database';
 import { authenticateAdmin, AuthRequest } from '../middleware/auth';
+import { createSlug } from '../utils/helpers';
 
 const router = Router();
 
@@ -39,13 +40,15 @@ router.get('/:slug', async (req: Request, res: Response): Promise<void> => {
 router.post('/', authenticateAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { name, slug, category, description, longDescription, icon, sortOrder } = req.body;
-    if (!name || !slug || !category || !description) {
-      res.status(400).json({ error: 'Name, slug, category, and description are required' });
+    if (!name || !category || !description) {
+      res.status(400).json({ error: 'Name, category, and description are required' });
       return;
     }
 
+    const finalSlug = (slug || createSlug(name)).toLowerCase().trim();
+
     const service = await prisma.service.create({
-      data: { name, slug, category, description, longDescription, icon, sortOrder: sortOrder || 0 },
+      data: { name, slug: finalSlug, category, description, longDescription, icon, sortOrder: sortOrder || 0 },
     });
 
     await prisma.auditLog.create({

@@ -17,17 +17,18 @@ const HomePage = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [settingsRes, servicesRes, _testimonialsRes, videosRes, feedRes] = await Promise.all([
-          api.get('/settings'),
-          api.get('/services'),
-          api.get('/videos'),
-          api.get('/videos'), // Dummy call since testimonials is commented out or we just rearrange
-          fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://www.youtube.com/feeds/videos.xml?channel_id=UCKV2OmS9KmhRUzeMd4g46Dg&_=' + new Date().getTime())}`).then(res => res.json())
+        const [settingsRes, servicesRes, videosRes, feedRes] = await Promise.all([
+          api.get('/settings').catch(() => ({ data: {} })),
+          api.get('/services').catch(() => ({ data: [] })),
+          api.get('/videos').catch(() => ({ data: [] })),
+          fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://www.youtube.com/feeds/videos.xml?channel_id=UCKV2OmS9KmhRUzeMd4g46Dg&_=' + new Date().getTime())}`)
+            .then(res => res.json())
+            .catch(() => ({ status: 'error', items: [] }))
         ]);
-        setSettings(settingsRes.data);
-        setServices(servicesRes.data.slice(0, 6)); // Top 6 services
-        setVideos(videosRes.data.slice(0, 3));
-        if (feedRes.status === 'ok') {
+        setSettings(settingsRes.data || {});
+        setServices((servicesRes.data || []).slice(0, 6)); // Top 6 services
+        setVideos((videosRes.data || []).slice(0, 3));
+        if (feedRes?.status === 'ok') {
           setFeedVideos(feedRes.items || []);
         }
       } catch (error) {

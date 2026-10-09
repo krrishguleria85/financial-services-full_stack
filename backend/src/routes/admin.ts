@@ -4,8 +4,8 @@ import { authenticateAdmin, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
-// GET /api/admin/dashboard - Dashboard statistics
-router.get('/dashboard', authenticateAdmin, async (_req: AuthRequest, res: Response): Promise<void> => {
+// GET /api/admin/dashboard & /api/admin/stats - Dashboard statistics
+router.get(['/dashboard', '/stats'], authenticateAdmin, async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -91,6 +91,11 @@ router.get('/dashboard', authenticateAdmin, async (_req: AuthRequest, res: Respo
     });
 
     res.json({
+      // Flattened stats for direct access
+      totalCustomers,
+      activeRequests,
+      upcomingAppointments: todaysAppointments,
+      // Nested stats
       stats: {
         totalCustomers,
         newEnquiries,

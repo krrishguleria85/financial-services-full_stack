@@ -1,7 +1,10 @@
 import { Router, Request, Response } from 'express';
+import fs from 'fs';
+import path from 'path';
 import prisma from '../config/database';
+import { config } from '../config';
 import { authenticateAdmin, AuthRequest } from '../middleware/auth';
-import { generateRequestId, maskPAN } from '../utils/helpers';
+import { generateRequestId, maskPAN, encryptData, decryptData } from '../utils/helpers';
 
 const router = Router();
 
@@ -54,7 +57,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     // Generate request ID
     const requestId = await generateRequestId();
 
-    // Create service request
+    // Create service request with encrypted PAN
     const serviceRequest = await prisma.serviceRequest.create({
       data: {
         requestId,
@@ -63,7 +66,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
         message,
         assessmentYear,
         incomeType,
-        panEncrypted: panNumber || null, // In production, encrypt this
+        panEncrypted: panNumber ? encryptData(panNumber.toUpperCase().trim()) : null,
         businessName,
         gstStatus,
         policyNumber,
@@ -139,10 +142,17 @@ router.get('/track', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // Safely get public customer-facing update note from status history
+    const customerUpdateNote = serviceRequest.statusHistory
+      .slice()
+      .reverse()
+      .find(h => h.note && !h.note.startsWith('Status updated to') && h.note !== 'Request submitted by customer')?.note || null;
+
     res.json({
       request: {
         ...serviceRequest,
-        adminNotes: serviceRequest.notes?.[0]?.content || null
+        panEncrypted: serviceRequest.panEncrypted ? maskPAN(decryptData(serviceRequest.panEncrypted)) : null,
+        adminNotes: customerUpdateNote,
       },
       documents: serviceRequest.documents,
       timeline: serviceRequest.statusHistory.map(h => ({
@@ -194,7 +204,7 @@ router.get('/', authenticateAdmin, async (req: AuthRequest, res: Response): Prom
     res.json({
       requests: requests.map(r => ({
         ...r,
-        panEncrypted: r.panEncrypted ? maskPAN(r.panEncrypted) : null,
+        panEncrypted: r.panEncrypted ? maskPAN(decryptData(r.panEncrypted)) : null,
       })),
       pagination: {
         total,
@@ -332,6 +342,18 @@ router.delete('/:id', authenticateAdmin, async (req: AuthRequest, res: Response)
     if (!existing) {
       res.status(404).json({ error: 'Service request not found' });
       return;
+    }
+
+    // Clean up physical document files from disk before deleting database records
+    const docs = await prisma.document.findMany({
+      where: { serviceRequestId: req.params.id as string },
+      select: { storedName: true },
+    });
+    for (const doc of docs) {
+      const filePath = path.join(config.upload.dir, doc.storedName);
+      if (fs.existsSync(filePath)) {
+        try { fs.unlinkSync(filePath); } catch (e) { console.error('Error removing document file:', e); }
+      }
     }
 
     // Delete related RequestStatusHistory

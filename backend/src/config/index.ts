@@ -14,8 +14,10 @@ export const config = {
   },
   
   database: {
-    url: process.env.DATABASE_URL || 'file:./dev.db',
+    url: process.env.DATABASE_URL || '',
   },
+  
+  encryptionKey: process.env.ENCRYPTION_KEY || process.env.JWT_SECRET || 'financial-services-secure-encryption-key-32',
   
   upload: {
     maxFileSizeMB: parseInt(process.env.MAX_FILE_SIZE_MB || '10', 10),

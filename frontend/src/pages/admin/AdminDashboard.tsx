@@ -16,8 +16,14 @@ const AdminDashboard = () => {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const res = await api.get('/admin/stats');
-        setStats(res.data);
+        const res = await api.get('/admin/dashboard');
+        const data = res.data;
+        setStats({
+          totalCustomers: data.totalCustomers ?? data.stats?.totalCustomers ?? 0,
+          activeRequests: data.activeRequests ?? data.stats?.activeRequests ?? 0,
+          upcomingAppointments: data.upcomingAppointments ?? data.stats?.todaysAppointments ?? 0,
+          recentRequests: data.recentRequests || []
+        });
       } catch (error) {
         console.error('Failed to load dashboard stats', error);
       } finally {

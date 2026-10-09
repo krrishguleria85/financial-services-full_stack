@@ -68,8 +68,16 @@ const ServicesManagementPage = () => {
   const handleSaveService = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const generatedSlug = name
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .trim();
+
       const payload = { 
         name, 
+        slug: editingService?.slug || generatedSlug,
         category, 
         description, 
         longDescription, 

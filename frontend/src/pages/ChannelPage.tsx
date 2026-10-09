@@ -12,12 +12,14 @@ const ChannelPage = () => {
     const fetchData = async () => {
       try {
         const [videosRes, _settingsRes, feedRes] = await Promise.all([
-          api.get('/videos'),
-          api.get('/settings'),
-          fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://www.youtube.com/feeds/videos.xml?channel_id=UCKV2OmS9KmhRUzeMd4g46Dg&_=' + new Date().getTime())}`).then(res => res.json())
+          api.get('/videos').catch(() => ({ data: [] })),
+          api.get('/settings').catch(() => ({ data: {} })),
+          fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://www.youtube.com/feeds/videos.xml?channel_id=UCKV2OmS9KmhRUzeMd4g46Dg&_=' + new Date().getTime())}`)
+            .then(res => res.json())
+            .catch(() => ({ status: 'error', items: [] }))
         ]);
-        setVideos(videosRes.data);
-        if (feedRes.status === 'ok') {
+        setVideos(videosRes.data || []);
+        if (feedRes?.status === 'ok') {
           setFeedVideos(feedRes.items || []);
         }
       } catch (error) {
