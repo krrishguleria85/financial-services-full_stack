@@ -121,11 +121,11 @@ const HomePage = () => {
               {/* Star Health Insurance with Real Logo */}
               <Link 
                 to="/services/star-health-insurance?request=true" 
-                className="btn bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 sm:px-5 sm:py-3 text-base font-semibold shadow-lg flex items-center gap-3 rounded-xl transition-all hover:scale-105 group"
+                className="btn bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 sm:px-5 sm:py-3 text-base sm:text-lg font-semibold shadow-lg flex items-center gap-3 rounded-xl transition-all hover:scale-105 group"
               >
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white p-0.5 flex items-center justify-center shrink-0 shadow-sm overflow-hidden group-hover:scale-105 transition-transform">
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 shadow-md overflow-hidden group-hover:scale-110 transition-transform">
                   <img 
-                    src="/logos/star-health.svg" 
+                    src="/logos/star-health.png" 
                     alt="Star Health Insurance Logo" 
                     className="w-full h-full object-contain"
                   />
@@ -136,11 +136,11 @@ const HomePage = () => {
               {/* Income Tax / ITR with Real Logo */}
               <Link 
                 to="/services/itr-filing-assistance?request=true" 
-                className="btn bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 sm:px-5 sm:py-3 text-base font-semibold shadow-lg flex items-center gap-3 rounded-xl transition-all hover:scale-105 group"
+                className="btn bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 sm:px-5 sm:py-3 text-base sm:text-lg font-semibold shadow-lg flex items-center gap-3 rounded-xl transition-all hover:scale-105 group"
               >
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white p-0.5 flex items-center justify-center shrink-0 shadow-sm overflow-hidden group-hover:scale-105 transition-transform">
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 shadow-md overflow-hidden group-hover:scale-110 transition-transform">
                   <img 
-                    src="/logos/income-tax.svg" 
+                    src="/logos/income.png" 
                     alt="Income Tax Department Logo" 
                     className="w-full h-full object-contain"
                   />
@@ -151,11 +151,11 @@ const HomePage = () => {
               {/* LIC Insurance with Real Logo */}
               <Link 
                 to="/services/lic-insurance-services?request=true" 
-                className="btn bg-amber-600 hover:bg-amber-700 text-white px-4 py-2.5 sm:px-5 sm:py-3 text-base font-semibold shadow-lg flex items-center gap-3 rounded-xl transition-all hover:scale-105 group"
+                className="btn bg-amber-600 hover:bg-amber-700 text-white px-4 py-2.5 sm:px-5 sm:py-3 text-base sm:text-lg font-semibold shadow-lg flex items-center gap-3 rounded-xl transition-all hover:scale-105 group"
               >
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white p-0.5 flex items-center justify-center shrink-0 shadow-sm overflow-hidden group-hover:scale-105 transition-transform">
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 shadow-md overflow-hidden group-hover:scale-110 transition-transform">
                   <img 
-                    src="/logos/lic.svg" 
+                    src="/logos/lic.jpg" 
                     alt="LIC India Logo" 
                     className="w-full h-full object-contain"
                   />
