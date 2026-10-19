@@ -40,26 +40,28 @@ app.use(helmet({
 const allowedOrigins = [
   config.frontendUrl,
   config.frontendUrl.replace(/\/$/, ''),
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'http://localhost:5000',
+  'https://financial-services-web.onrender.com',
+  ...(config.nodeEnv !== 'production'
+    ? ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:5000']
+    : []),
 ].filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
+    // Allow requests with no origin (such as mobile apps, curl, or server-to-server calls)
     if (!origin) return callback(null, true);
-    if (
-      allowedOrigins.includes(origin) ||
-      allowedOrigins.includes(origin.replace(/\/$/, '')) ||
-      origin.endsWith('.onrender.com')
-    ) {
+
+    const normalizedOrigin = origin.replace(/\/$/, '');
+    if (allowedOrigins.includes(origin) || allowedOrigins.includes(normalizedOrigin)) {
       return callback(null, true);
     }
-    return callback(null, true); // Allow during production transition
+
+    return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
+  maxAge: 86400, // 24 hours preflight cache
 }));
 
 // Rate limiting for public API endpoints
@@ -115,6 +117,11 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 
   if (err.code === 'LIMIT_FILE_SIZE') {
     res.status(400).json({ error: `File size exceeds the allowed limit of ${config.upload.maxFileSizeMB}MB` });
+    return;
+  }
+
+  if (err.message?.includes('Not allowed by CORS')) {
+    res.status(403).json({ error: 'Access denied: origin not allowed by CORS policy' });
     return;
   }
 
