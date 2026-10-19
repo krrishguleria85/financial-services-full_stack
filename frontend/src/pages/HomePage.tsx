@@ -118,28 +118,49 @@ const HomePage = () => {
               Professional assistance for Star Health Insurance, LIC, Income Tax Returns, GST and financial documentation. Reliable, secure, and hassle-free.
             </p>
             <div className="flex flex-wrap gap-3 pt-4">
-              {/* Star Health Insurance */}
+              {/* Star Health Insurance with Real Logo */}
               <Link 
                 to="/services/star-health-insurance?request=true" 
-                className="btn bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 text-base font-semibold shadow-lg flex items-center gap-2 rounded-xl transition-all hover:scale-105"
+                className="btn bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 sm:px-5 sm:py-3 text-base font-semibold shadow-lg flex items-center gap-3 rounded-xl transition-all hover:scale-105 group"
               >
-                <HeartPulse className="w-5 h-5" /> Star Health Plans
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white p-0.5 flex items-center justify-center shrink-0 shadow-sm overflow-hidden group-hover:scale-105 transition-transform">
+                  <img 
+                    src="/logos/star-health.svg" 
+                    alt="Star Health Insurance Logo" 
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <span>Star Health Plans</span>
               </Link>
 
-              {/* ITR Filing */}
+              {/* Income Tax / ITR with Real Logo */}
               <Link 
                 to="/services/itr-filing-assistance?request=true" 
-                className="btn bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 text-base font-semibold shadow-lg flex items-center gap-2 rounded-xl transition-all hover:scale-105"
+                className="btn bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 sm:px-5 sm:py-3 text-base font-semibold shadow-lg flex items-center gap-3 rounded-xl transition-all hover:scale-105 group"
               >
-                <FileText className="w-5 h-5" /> File Your ITR
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white p-0.5 flex items-center justify-center shrink-0 shadow-sm overflow-hidden group-hover:scale-105 transition-transform">
+                  <img 
+                    src="/logos/income-tax.svg" 
+                    alt="Income Tax Department Logo" 
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <span>File Your ITR</span>
               </Link>
 
-              {/* LIC Insurance */}
+              {/* LIC Insurance with Real Logo */}
               <Link 
                 to="/services/lic-insurance-services?request=true" 
-                className="btn bg-amber-600 hover:bg-amber-700 text-white px-5 py-3 text-base font-semibold shadow-lg flex items-center gap-2 rounded-xl transition-all hover:scale-105"
+                className="btn bg-amber-600 hover:bg-amber-700 text-white px-4 py-2.5 sm:px-5 sm:py-3 text-base font-semibold shadow-lg flex items-center gap-3 rounded-xl transition-all hover:scale-105 group"
               >
-                <ShieldCheck className="w-5 h-5" /> LIC Policies
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white p-0.5 flex items-center justify-center shrink-0 shadow-sm overflow-hidden group-hover:scale-105 transition-transform">
+                  <img 
+                    src="/logos/lic.svg" 
+                    alt="LIC India Logo" 
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <span>LIC Policies</span>
               </Link>
 
               {/* Book Consultation */}
