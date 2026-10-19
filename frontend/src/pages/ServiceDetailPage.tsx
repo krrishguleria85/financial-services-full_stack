@@ -31,8 +31,21 @@ const ServiceDetailPage = () => {
         setService(res.data);
       } catch (error) {
         console.error('Failed to load service', error);
-        toast.error('Service not found');
-        navigate('/services');
+        if (slug === 'star-health-insurance') {
+          setService({
+            id: 'star-health-insurance',
+            name: 'Star Health Insurance',
+            slug: 'star-health-insurance',
+            category: 'health-insurance',
+            description: 'Comprehensive health insurance plans from Star Health for individuals, families, and senior citizens.',
+            longDescription: "As an Authorized Agent for Star Health and Allied Insurance, I provide expert guidance on choosing the right health coverage for you and your family. Star Health is India's first standalone health insurance provider, offering a wide range of plans including Family Floater, Senior Citizen, and comprehensive individual plans. Protect your savings from unexpected medical emergencies with cashless hospitalization and wide network coverage.",
+            icon: 'HeartPulse',
+            isActive: true,
+          });
+        } else {
+          toast.error('Service not found');
+          navigate('/services');
+        }
       } finally {
         setIsLoading(false);
       }

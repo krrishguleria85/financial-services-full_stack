@@ -22,9 +22,29 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
 // GET /api/services/:slug - Public: get single service by slug
 router.get('/:slug', async (req: Request, res: Response): Promise<void> => {
   try {
-    const service = await prisma.service.findUnique({
-      where: { slug: req.params.slug as string },
+    const slug = (req.params.slug as string).toLowerCase().trim();
+    let service = await prisma.service.findUnique({
+      where: { slug },
     });
+
+    // Auto-create Star Health Insurance if missing in the database
+    if (!service && slug === 'star-health-insurance') {
+      service = await prisma.service.upsert({
+        where: { slug: 'star-health-insurance' },
+        update: { isActive: true },
+        create: {
+          name: 'Star Health Insurance',
+          slug: 'star-health-insurance',
+          category: 'health-insurance',
+          description: 'Comprehensive health insurance plans from Star Health for individuals, families, and senior citizens.',
+          longDescription: "As an Authorized Agent for Star Health and Allied Insurance, I provide expert guidance on choosing the right health coverage for you and your family. Star Health is India's first standalone health insurance provider, offering a wide range of plans including Family Floater, Senior Citizen, and comprehensive individual plans. Protect your savings from unexpected medical emergencies with cashless hospitalization and wide network coverage.",
+          icon: 'HeartPulse',
+          sortOrder: 0,
+          isActive: true,
+        },
+      });
+    }
+
     if (!service) {
       res.status(404).json({ error: 'Service not found' });
       return;

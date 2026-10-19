@@ -152,56 +152,64 @@ async function initDatabase() {
       }
     }
 
-    const serviceCount = await prisma.service.count();
-    if (serviceCount === 0) {
-      console.log('🌱 Populating initial services...');
-      const defaultServices = [
-        {
-          name: 'ITR Filing Assistance',
-          slug: 'itr-filing-assistance',
-          category: 'itr',
-          description: 'Expert assistance for Income Tax Return filing for individuals and businesses.',
-          icon: 'FileText',
-          sortOrder: 1,
-        },
-        {
-          name: 'GST Registration & Returns',
-          slug: 'gst-services',
-          category: 'gst',
-          description: 'Complete GST registration and regular return filing assistance.',
-          icon: 'Building',
-          sortOrder: 2,
-        },
-        {
-          name: 'LIC / Life Insurance',
-          slug: 'lic-insurance',
-          category: 'lic',
-          description: 'Assistance for LIC policies, premiums, and claim processing.',
-          icon: 'Shield',
-          sortOrder: 3,
-        },
-        {
-          name: 'Star Health Insurance',
-          slug: 'star-health-insurance',
-          category: 'health-insurance',
-          description: 'Comprehensive health and medical insurance plans from Star Health.',
-          icon: 'HeartPulse',
-          sortOrder: 4,
-        },
-        {
-          name: 'Tax & Financial Consultation',
-          slug: 'tax-consultation',
-          category: 'consultation',
-          description: 'Personalized tax planning and financial advisory.',
-          icon: 'Calculator',
-          sortOrder: 5,
-        },
-      ];
-      for (const s of defaultServices) {
-        await prisma.service.create({ data: s });
-      }
-      console.log('✅ Default services created');
+    // Ensure core services exist
+    const defaultServices = [
+      {
+        name: 'Star Health Insurance',
+        slug: 'star-health-insurance',
+        category: 'health-insurance',
+        description: 'Comprehensive health insurance plans from Star Health for individuals, families, and senior citizens.',
+        longDescription: "As an Authorized Agent for Star Health and Allied Insurance, I provide expert guidance on choosing the right health coverage for you and your family. Star Health is India's first standalone health insurance provider, offering a wide range of plans including Family Floater, Senior Citizen, and comprehensive individual plans. Protect your savings from unexpected medical emergencies with cashless hospitalization and wide network coverage.",
+        icon: 'HeartPulse',
+        sortOrder: 0,
+        isActive: true,
+      },
+      {
+        name: 'ITR Filing Assistance',
+        slug: 'itr-filing-assistance',
+        category: 'itr',
+        description: 'Expert assistance for Income Tax Return filing for individuals and businesses.',
+        icon: 'FileText',
+        sortOrder: 1,
+        isActive: true,
+      },
+      {
+        name: 'GST Registration & Returns',
+        slug: 'gst-services',
+        category: 'gst',
+        description: 'Complete GST registration and regular return filing assistance.',
+        icon: 'Building',
+        sortOrder: 2,
+        isActive: true,
+      },
+      {
+        name: 'LIC / Insurance Services',
+        slug: 'lic-insurance-services',
+        category: 'lic',
+        description: 'Assistance for LIC policies, premiums, and claim processing.',
+        icon: 'Shield',
+        sortOrder: 3,
+        isActive: true,
+      },
+      {
+        name: 'Tax & Financial Consultation',
+        slug: 'tax-consultation',
+        category: 'consultation',
+        description: 'Personalized tax planning and financial advisory.',
+        icon: 'Calculator',
+        sortOrder: 5,
+        isActive: true,
+      },
+    ];
+
+    for (const s of defaultServices) {
+      await prisma.service.upsert({
+        where: { slug: s.slug },
+        update: { isActive: true },
+        create: s,
+      });
     }
+    console.log('✅ Core services verified');
   } catch (err) {
     console.warn('Database initialization check skipped or failed:', err);
   }

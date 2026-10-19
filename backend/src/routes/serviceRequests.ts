@@ -30,12 +30,16 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Check service exists
-    const service = await prisma.service.findUnique({ where: { id: serviceId } });
+    // Check service exists (by id or slug)
+    let service = await prisma.service.findUnique({ where: { id: serviceId } });
+    if (!service) {
+      service = await prisma.service.findUnique({ where: { slug: serviceId } });
+    }
     if (!service) {
       res.status(400).json({ error: 'Invalid service selected' });
       return;
     }
+    const actualServiceId = service.id;
 
     // Find or create customer
     let customer = await prisma.customer.findFirst({
@@ -62,7 +66,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       data: {
         requestId,
         customerId: customer.id,
-        serviceId,
+        serviceId: actualServiceId,
         message,
         assessmentYear,
         incomeType,
