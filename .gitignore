@@ -2,17 +2,19 @@
 node_modules/
 
 # Environment
-.env
-.env.local
-.env.production
+.env*
+!.env.example
 
 # Database
 backend/prisma/dev.db
 backend/prisma/dev.db-journal
 backend/prisma/migrations/
+*.db
+*.sqlite
+*.sqlite3
 
 # Uploads
-backend/uploads/*
+backend/uploads/**
 !backend/uploads/.gitkeep
 
 # Build

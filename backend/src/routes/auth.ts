@@ -1,14 +1,30 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
 import { config } from '../config';
 import prisma from '../config/database';
 import { authenticateAdmin, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
+// Dedicated rate limiter for administrative login:
+// Limits failed authentication attempts (status >= 400) to max 5 per 15 minutes per IP.
+// Legitimate successful logins (status < 400) are skipped and do not lock out users.
+export const loginLimiter = rateLimit({
+  windowMs: config.rateLimit.loginWindowMs,
+  max: config.rateLimit.loginMaxAttempts,
+  skipSuccessfulRequests: true,
+  statusCode: 429,
+  message: {
+    error: 'Too many failed login attempts. Please try again after 15 minutes.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // POST /api/auth/login
-router.post('/login', async (req: Request, res: Response): Promise<void> => {
+router.post('/login', loginLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
 
@@ -24,7 +40,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     }
 
     if (!admin.isActive) {
-      res.status(401).json({ error: 'Account is deactivated' });
+      res.status(401).json({ error: 'Invalid email or password' });
       return;
     }
 

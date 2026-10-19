@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import prisma from '../config/database';
+import { config } from '../config';
 
-const ENCRYPTION_KEY = (process.env.ENCRYPTION_KEY || process.env.JWT_SECRET || 'financial-services-secure-encryption-key-32').padEnd(32, '0').slice(0, 32);
 const IV_LENGTH = 16;
 
 /**
@@ -9,9 +9,17 @@ const IV_LENGTH = 16;
  */
 export function encryptData(text: string | null | undefined): string | null {
   if (!text) return null;
+  const key = config.encryptionKey;
+  if (!key) {
+    if (config.nodeEnv === 'production') {
+      throw new Error('FATAL: Cannot encrypt data because ENCRYPTION_KEY is not configured in production.');
+    }
+    console.error('Encryption error: ENCRYPTION_KEY is not configured');
+    return text;
+  }
   try {
     const iv = crypto.randomBytes(IV_LENGTH);
-    const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
+    const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(key), iv);
     let encrypted = cipher.update(text, 'utf8', 'hex');
     encrypted += cipher.final('hex');
     return `${iv.toString('hex')}:${encrypted}`;
@@ -27,11 +35,19 @@ export function encryptData(text: string | null | undefined): string | null {
 export function decryptData(text: string | null | undefined): string | null {
   if (!text) return null;
   if (!text.includes(':')) return text; // Plaintext fallback
+  const key = config.encryptionKey;
+  if (!key) {
+    if (config.nodeEnv === 'production') {
+      throw new Error('FATAL: Cannot decrypt data because ENCRYPTION_KEY is not configured in production.');
+    }
+    console.error('Decryption error: ENCRYPTION_KEY is not configured');
+    return text;
+  }
   try {
     const [ivHex, encryptedHex] = text.split(':');
     if (!ivHex || !encryptedHex) return text;
     const iv = Buffer.from(ivHex, 'hex');
-    const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
+    const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(key), iv);
     let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
     return decrypted;

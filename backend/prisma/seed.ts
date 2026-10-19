@@ -27,20 +27,28 @@ async function main() {
   // ============================================
   // Admin Account
   // ============================================
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@example.com';
-  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
-  const passwordHash = await bcrypt.hash(adminPassword, 12);
+  const isProduction = process.env.NODE_ENV === 'production';
+  const adminEmail = process.env.ADMIN_EMAIL || (isProduction ? '' : 'admin@example.com');
+  const adminPassword = process.env.ADMIN_PASSWORD;
+
+  if (isProduction && (!adminEmail || !adminPassword)) {
+    throw new Error('FATAL: In production, ADMIN_EMAIL and ADMIN_PASSWORD environment variables are required to seed the database.');
+  }
+
+  const effectiveEmail = adminEmail || 'admin@example.com';
+  const effectivePassword = adminPassword || 'admin123';
+  const passwordHash = await bcrypt.hash(effectivePassword, 12);
   const admin = await prisma.admin.upsert({
-    where: { email: adminEmail },
+    where: { email: effectiveEmail },
     update: {},
     create: {
-      email: adminEmail,
+      email: effectiveEmail,
       passwordHash,
       name: 'Admin',
       role: 'super_admin',
     },
   });
-  console.log(`✅ Admin account created: ${adminEmail}`);
+  console.log(`✅ Admin account configured: ${effectiveEmail}`);
 
   // ============================================
   // Services
@@ -396,9 +404,12 @@ async function main() {
   console.log('✅ Demo admin notes created');
 
   console.log('\n✨ Database seeded successfully!\n');
-  console.log('📧 Admin Login: admin@example.com');
-  console.log('🔑 Admin Password: ChangeMe123!');
-  console.log('\n⚠️  IMPORTANT: Change these credentials before production use!\n');
+  console.log(`📧 Admin Email: ${effectiveEmail}`);
+  if (adminPassword) {
+    console.log('🔑 Admin Password: [Configured via ADMIN_PASSWORD environment variable]');
+  } else {
+    console.log('🔑 Admin Password: [Development default: admin123 - NOT FOR PRODUCTION]');
+  }
 }
 
 main()
