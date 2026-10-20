@@ -143,9 +143,9 @@ async function initDatabase() {
     const adminPassword = process.env.ADMIN_PASSWORD;
 
     if (adminEmail && adminPassword) {
+      const passwordHash = await bcrypt.hash(adminPassword, 12);
       const existing = await prisma.admin.findUnique({ where: { email: adminEmail } });
       if (!existing) {
-        const passwordHash = await bcrypt.hash(adminPassword, 12);
         await prisma.admin.create({
           data: {
             email: adminEmail,
@@ -156,6 +156,15 @@ async function initDatabase() {
           },
         });
         console.log(`✅ Admin account initialized for: ${adminEmail}`);
+      } else {
+        await prisma.admin.update({
+          where: { email: adminEmail },
+          data: {
+            passwordHash,
+            isActive: true,
+          },
+        });
+        console.log(`✅ Admin account password updated for: ${adminEmail}`);
       }
     }
 

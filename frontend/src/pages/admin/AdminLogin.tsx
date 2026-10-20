@@ -20,7 +20,8 @@ const AdminLogin = () => {
       toast.success('Logged in successfully');
       navigate('/admin/dashboard');
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Invalid credentials');
+      const msg = error.response?.data?.error || error.message || 'Invalid credentials';
+      toast.error(msg);
     } finally {
       setIsLoading(false);
     }
