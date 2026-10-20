@@ -51,7 +51,7 @@ const Navbar = () => {
               <span className="font-bold text-xl tracking-tight text-slate-900">{businessName}</span>
             </Link>
           </div>
-          
+
           {/* Desktop Menu */}
           <div className="hidden md:flex items-center space-x-8">
             <div className="flex space-x-6">
@@ -59,9 +59,8 @@ const Navbar = () => {
                 <Link
                   key={link.name}
                   to={link.path}
-                  className={`text-sm font-medium transition-colors hover:text-primary-600 ${
-                    location.pathname === link.path ? 'text-primary-600' : 'text-slate-600'
-                  }`}
+                  className={`text-sm font-medium transition-colors hover:text-primary-600 ${location.pathname === link.path ? 'text-primary-600' : 'text-slate-600'
+                    }`}
                 >
                   {link.name}
                 </Link>
@@ -91,9 +90,8 @@ const Navbar = () => {
             <Link
               key={link.name}
               to={link.path}
-              className={`block px-4 py-2 rounded-lg text-base font-medium ${
-                location.pathname === link.path ? 'bg-primary-50 text-primary-700' : 'text-slate-700 hover:bg-slate-50'
-              }`}
+              className={`block px-4 py-2 rounded-lg text-base font-medium ${location.pathname === link.path ? 'bg-primary-50 text-primary-700' : 'text-slate-700 hover:bg-slate-50'
+                }`}
             >
               {link.name}
             </Link>

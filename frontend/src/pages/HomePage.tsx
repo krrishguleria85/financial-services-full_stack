@@ -119,14 +119,14 @@ const HomePage = () => {
             </p>
             <div className="flex flex-wrap gap-3 pt-4">
               {/* Star Health Insurance with Real Logo */}
-              <Link 
-                to="/services/star-health-insurance?request=true" 
+              <Link
+                to="/services/star-health-insurance?request=true"
                 className="btn bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 sm:px-5 sm:py-3 text-base sm:text-lg font-semibold shadow-lg flex items-center gap-3 rounded-xl transition-all hover:scale-105 group"
               >
                 <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 shadow-md overflow-hidden group-hover:scale-110 transition-transform">
-                  <img 
-                    src="/logos/star-health.png" 
-                    alt="Star Health Insurance Logo" 
+                  <img
+                    src="/logos/star-health.png"
+                    alt="Star Health Insurance Logo"
                     className="w-full h-full object-contain"
                   />
                 </div>
@@ -134,14 +134,14 @@ const HomePage = () => {
               </Link>
 
               {/* Income Tax / ITR with Real Logo */}
-              <Link 
-                to="/services/itr-filing-assistance?request=true" 
+              <Link
+                to="/services/itr-filing-assistance?request=true"
                 className="btn bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 sm:px-5 sm:py-3 text-base sm:text-lg font-semibold shadow-lg flex items-center gap-3 rounded-xl transition-all hover:scale-105 group"
               >
                 <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 shadow-md overflow-hidden group-hover:scale-110 transition-transform">
-                  <img 
-                    src="/logos/income.png" 
-                    alt="Income Tax Department Logo" 
+                  <img
+                    src="/logos/income.png"
+                    alt="Income Tax Department Logo"
                     className="w-full h-full object-contain"
                   />
                 </div>
@@ -149,14 +149,14 @@ const HomePage = () => {
               </Link>
 
               {/* LIC Insurance with Real Logo */}
-              <Link 
-                to="/services/lic-insurance-services?request=true" 
+              <Link
+                to="/services/lic-insurance-services?request=true"
                 className="btn bg-amber-600 hover:bg-amber-700 text-white px-4 py-2.5 sm:px-5 sm:py-3 text-base sm:text-lg font-semibold shadow-lg flex items-center gap-3 rounded-xl transition-all hover:scale-105 group"
               >
                 <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 shadow-md overflow-hidden group-hover:scale-110 transition-transform">
-                  <img 
-                    src="/logos/lic.jpg" 
-                    alt="LIC India Logo" 
+                  <img
+                    src="/logos/lic.jpg"
+                    alt="LIC India Logo"
                     className="w-full h-full object-contain"
                   />
                 </div>
@@ -164,8 +164,8 @@ const HomePage = () => {
               </Link>
 
               {/* Book Consultation */}
-              <Link 
-                to="/book-appointment" 
+              <Link
+                to="/book-appointment"
                 className="btn bg-gold-500 hover:bg-gold-600 text-white px-5 py-3 text-base font-semibold shadow-lg flex items-center gap-2 rounded-xl transition-all hover:scale-105"
               >
                 Book Consultation
@@ -174,9 +174,9 @@ const HomePage = () => {
           </div>
           <div className="hidden lg:block relative">
             <div className="absolute inset-0 bg-gradient-to-tr from-primary-500 to-gold-500 rounded-2xl blur-2xl opacity-30 transform rotate-6"></div>
-            <img 
-              src="https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=1000" 
-              alt="Financial Planning" 
+            <img
+              src="https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=1000"
+              alt="Financial Planning"
               className="relative rounded-2xl shadow-2xl object-cover h-[500px] w-full border border-white/10"
             />
           </div>
@@ -190,27 +190,27 @@ const HomePage = () => {
             <div className="text-center md:text-left">
               <h3 className="text-2xl font-bold text-white mb-2">Beyond Finance: My Passion for Dance</h3>
               <p className="text-slate-400 max-w-2xl">
-                When I'm not helping you with ITR, GST, and Insurance, I'm expressing myself through dance. 
+                When I'm not helping you with ITR, GST, and Insurance, I'm expressing myself through dance.
                 Join my journey and check out my performances! Users can choose their path—finance or dance!
               </p>
             </div>
             <div className="flex flex-shrink-0 gap-4">
-              <a 
-                href="https://www.youtube.com/@rajeshguleria1973" 
-                target="_blank" 
-                rel="noopener noreferrer" 
+              <a
+                href="https://www.youtube.com/@rajeshguleria1973"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="flex items-center gap-2 bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-500/50 px-6 py-3 rounded-xl font-bold transition-colors"
               >
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" /></svg>
                 Subscribe
               </a>
-              <a 
-                href="https://www.instagram.com/guleria2877?stkn=MXQ5enFwazA1MHdxdw==" 
-                target="_blank" 
-                rel="noopener noreferrer" 
+              <a
+                href="https://www.instagram.com/guleria2877?stkn=MXQ5enFwazA1MHdxdw=="
+                target="_blank"
+                rel="noopener noreferrer"
                 className="flex items-center gap-2 bg-pink-600/10 hover:bg-pink-600/20 text-pink-500 border border-pink-500/50 px-6 py-3 rounded-xl font-bold transition-colors"
               >
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/></svg>
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z" /></svg>
                 Follow
               </a>
             </div>
@@ -285,7 +285,7 @@ const HomePage = () => {
                 View Channel <ArrowRight className="ml-2 w-4 h-4" />
               </Link>
             </div>
-            
+
             <div className="grid lg:grid-cols-2 gap-12">
               {/* Financial Videos */}
               <div>
@@ -309,33 +309,33 @@ const HomePage = () => {
                   ))}
                 </div>
               </div>
-              
+
               {/* Dance Videos & Socials */}
               <div>
                 <h3 className="text-2xl font-bold mb-6 text-pink-400">Vlogs, Dance & Creative Shorts</h3>
                 <div className="grid grid-cols-2 gap-4">
-                   {feedVideos.slice(0, 2).map((item, idx) => {
-                     const isShort = item.link.includes('/shorts/');
-                     return (
-                       <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className={`block relative bg-slate-800 rounded-xl overflow-hidden group shadow-lg ${isShort ? 'aspect-[9/16]' : 'aspect-video'}`}>
-                          <img src={item.thumbnail} alt={item.title} className="absolute inset-0 w-full h-full object-cover opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500" />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
-                          <div className="absolute inset-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <svg className="w-12 h-12 mb-3 text-red-500 group-hover:scale-110 transition-transform drop-shadow-lg" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
-                          </div>
-                          <div className="absolute bottom-0 inset-x-0 p-3">
-                            <h4 className="text-white text-xs font-bold line-clamp-2 drop-shadow-md">{item.title}</h4>
-                          </div>
-                       </a>
-                     );
-                   })}
-                   
-                   {/* Fallback if no videos are found */}
-                   {feedVideos.length === 0 && (
-                     <div className="col-span-2 text-slate-500 text-sm py-8 text-center bg-slate-800/30 rounded-xl border border-slate-700/50">
-                       Loading latest shorts...
-                     </div>
-                   )}
+                  {feedVideos.slice(0, 2).map((item, idx) => {
+                    const isShort = item.link.includes('/shorts/');
+                    return (
+                      <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className={`block relative bg-slate-800 rounded-xl overflow-hidden group shadow-lg ${isShort ? 'aspect-[9/16]' : 'aspect-video'}`}>
+                        <img src={item.thumbnail} alt={item.title} className="absolute inset-0 w-full h-full object-cover opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <svg className="w-12 h-12 mb-3 text-red-500 group-hover:scale-110 transition-transform drop-shadow-lg" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" /></svg>
+                        </div>
+                        <div className="absolute bottom-0 inset-x-0 p-3">
+                          <h4 className="text-white text-xs font-bold line-clamp-2 drop-shadow-md">{item.title}</h4>
+                        </div>
+                      </a>
+                    );
+                  })}
+
+                  {/* Fallback if no videos are found */}
+                  {feedVideos.length === 0 && (
+                    <div className="col-span-2 text-slate-500 text-sm py-8 text-center bg-slate-800/30 rounded-xl border border-slate-700/50">
+                      Loading latest shorts...
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

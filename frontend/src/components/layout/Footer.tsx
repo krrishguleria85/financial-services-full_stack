@@ -89,7 +89,7 @@ const Footer = () => {
             </ul>
           </div>
         </div>
-        
+
         <div className="pt-8 border-t border-slate-800 text-sm text-center">
           <p>{settings.footerText || `© ${new Date().getFullYear()} Your Business Name. All rights reserved.`}</p>
         </div>
