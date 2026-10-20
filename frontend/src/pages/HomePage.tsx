@@ -107,17 +107,38 @@ const HomePage = () => {
       <section className="bg-gradient-to-br from-slate-900 to-primary-900 text-white py-20 lg:py-32 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 items-center">
           <div className="space-y-6">
-            <div className="inline-flex items-center gap-2 bg-blue-900/50 text-blue-200 border border-blue-700/50 px-4 py-2 rounded-full font-medium">
-              <ShieldCheck className="w-5 h-5 text-blue-400" />
-              Authorized Star Health Insurance Agent
+            <div className="flex flex-wrap gap-2">
+              <div className="inline-flex items-center gap-2 bg-amber-900/40 text-amber-200 border border-amber-600/50 px-4 py-2 rounded-full font-medium">
+                <ShieldCheck className="w-5 h-5 text-amber-400" />
+                Authorized LIC Partner Agent
+              </div>
+              <div className="inline-flex items-center gap-2 bg-blue-900/50 text-blue-200 border border-blue-700/50 px-4 py-2 rounded-full font-medium">
+                <ShieldCheck className="w-5 h-5 text-blue-400" />
+                Authorized Star Health Insurance Agent
+              </div>
             </div>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight">
-              Your Trusted Partner for <span className="text-gold-500">Star Health Insurance, Tax & GST</span> Services
+              Your Trusted Partner for <span className="text-gold-500">LIC, Star Health Insurance, Tax & GST</span> Services
             </h1>
             <p className="text-lg sm:text-xl text-slate-300 max-w-2xl">
-              Professional assistance for Star Health Insurance, LIC, Income Tax Returns, GST and financial documentation. Reliable, secure, and hassle-free.
+              Professional assistance for LIC, Star Health Insurance, Income Tax Returns, GST and financial documentation. Reliable, secure, and hassle-free.
             </p>
             <div className="flex flex-wrap gap-3 pt-4">
+              {/* LIC Insurance with Real Logo */}
+              <Link
+                to="/services/lic-insurance-services?request=true"
+                className="btn bg-amber-600 hover:bg-amber-700 text-white px-4 py-2.5 sm:px-5 sm:py-3 text-base sm:text-lg font-semibold shadow-lg flex items-center gap-3 rounded-xl transition-all hover:scale-105 group"
+              >
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 shadow-md overflow-hidden group-hover:scale-110 transition-transform">
+                  <img
+                    src="/logos/lic.jpg"
+                    alt="LIC India Logo"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <span>LIC Policies</span>
+              </Link>
+
               {/* Star Health Insurance with Real Logo */}
               <Link
                 to="/services/star-health-insurance?request=true"
@@ -146,21 +167,6 @@ const HomePage = () => {
                   />
                 </div>
                 <span>File Your ITR</span>
-              </Link>
-
-              {/* LIC Insurance with Real Logo */}
-              <Link
-                to="/services/lic-insurance-services?request=true"
-                className="btn bg-amber-600 hover:bg-amber-700 text-white px-4 py-2.5 sm:px-5 sm:py-3 text-base sm:text-lg font-semibold shadow-lg flex items-center gap-3 rounded-xl transition-all hover:scale-105 group"
-              >
-                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 shadow-md overflow-hidden group-hover:scale-110 transition-transform">
-                  <img
-                    src="/logos/lic.jpg"
-                    alt="LIC India Logo"
-                    className="w-full h-full object-contain"
-                  />
-                </div>
-                <span>LIC Policies</span>
               </Link>
 
               {/* Book Consultation */}
