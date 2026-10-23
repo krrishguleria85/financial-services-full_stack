@@ -17,6 +17,7 @@ import {
   uploadDocumentFile,
   getDocumentStream,
   deleteOrphanedR2Object,
+  isR2Configured,
 } from '../services/storageService';
 
 const router = Router();
@@ -55,6 +56,11 @@ export const verifyUploadAuthorization = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    const serviceRequestId = req.params.serviceRequestId as string;
+    const hasBearer = Boolean(req.headers.authorization?.startsWith('Bearer '));
+    const hasXToken = Boolean(req.headers['x-upload-token']);
+    console.log(`[Upload Auth] Incoming request for serviceRequestId=${serviceRequestId}, authHeaders={hasBearer:${hasBearer},hasXUploadToken:${hasXToken}}`);
+
     // 1. Extract upload authorization token from header
     const rawToken =
       (req.headers['x-upload-token'] as string) ||
@@ -63,6 +69,7 @@ export const verifyUploadAuthorization = async (
         : undefined);
 
     if (!rawToken) {
+      console.warn(`[Upload Auth] Missing upload token for serviceRequestId=${serviceRequestId}`);
       res.status(401).json({ error: 'Upload authorization token is required' });
       return;
     }
@@ -72,6 +79,7 @@ export const verifyUploadAuthorization = async (
     try {
       decoded = jwt.verify(rawToken, config.jwt.secret, { algorithms: ['HS256'] });
     } catch (jwtErr: any) {
+      console.warn(`[Upload Auth] JWT verification failed for serviceRequestId=${serviceRequestId}: ${jwtErr?.name || jwtErr}`);
       if (jwtErr.name === 'TokenExpiredError') {
         res.status(401).json({ error: 'Upload session has expired. Please track your request again.' });
         return;
@@ -82,12 +90,13 @@ export const verifyUploadAuthorization = async (
 
     // 3. Verify token purpose and target service request binding
     if (decoded.purpose !== 'customer_document_upload') {
+      console.warn(`[Upload Auth] Invalid purpose "${decoded.purpose}" for serviceRequestId=${serviceRequestId}`);
       res.status(403).json({ error: 'Invalid token purpose' });
       return;
     }
 
-    const serviceRequestId = req.params.serviceRequestId as string;
     if (decoded.sub !== serviceRequestId) {
+      console.warn(`[Upload Auth] Token sub mismatch: decoded.sub=${decoded.sub} vs param=${serviceRequestId}`);
       res.status(403).json({ error: 'Token is not authorized for this service request' });
       return;
     }
@@ -98,24 +107,32 @@ export const verifyUploadAuthorization = async (
     });
 
     if (!serviceRequest) {
+      console.warn(`[Upload Auth] Service request not found in DB for id=${serviceRequestId}`);
       res.status(404).json({ error: 'Service request not found' });
       return;
     }
 
     // Enforce explicit allowlist of statuses permitted to receive documents
     if (!UPLOAD_ELIGIBLE_STATUSES.has(serviceRequest.status)) {
+      console.warn(`[Upload Auth] Ineligible status "${serviceRequest.status}" for id=${serviceRequestId}`);
       res.status(400).json({
         error: `Service request in '${serviceRequest.status}' status cannot accept document uploads. Uploads are only accepted for active requests (NEW, DOCUMENTS_REQUIRED, DOCUMENTS_RECEIVED, UNDER_REVIEW, IN_PROGRESS).`,
       });
       return;
     }
 
+    console.log(`[Upload Auth] Pre-Multer authorization passed for serviceRequestId=${serviceRequestId}, status=${serviceRequest.status}`);
+
     // Attach verified records to req for downstream Multer and route handler
     req.serviceRequest = serviceRequest;
     req.uploadTokenClaims = decoded;
     next();
-  } catch (error) {
-    console.error('Verify upload authorization error:', error);
+  } catch (error: any) {
+    console.error(`[Upload Auth Error] Verification error for serviceRequestId=${req.params.serviceRequestId}:`, {
+      name: error?.name,
+      message: error?.message,
+      stack: error?.stack,
+    });
     res.status(500).json({ error: 'Internal authorization error' });
   }
 };
@@ -127,12 +144,13 @@ router.post(
   verifyUploadAuthorization, // Runs BEFORE Multer writes any file to disk!
   uploadSingleFile('file'), // Wraps Multer and guarantees unlinking on LIMIT_FILE_SIZE or stream error!
   async (req: AuthorizedUploadRequest, res: Response): Promise<void> => {
+    const serviceRequestId = req.params.serviceRequestId as string;
     try {
       const serviceRequest = req.serviceRequest;
-      const serviceRequestId = req.params.serviceRequestId as string;
 
       // 1. Verify file payload
       if (!req.file) {
+        console.warn(`[Upload] Rejected: No file provided for serviceRequestId=${serviceRequestId}`);
         res.status(400).json({ error: 'No file uploaded' });
         return;
       }
@@ -140,14 +158,18 @@ router.post(
       const { documentType } = req.body;
       if (!documentType || typeof documentType !== 'string' || !documentType.trim()) {
         cleanupUploadedFile(req);
+        console.warn(`[Upload] Rejected: Document type missing for serviceRequestId=${serviceRequestId}`);
         res.status(400).json({ error: 'Document type is required' });
         return;
       }
+
+      console.log(`[Upload] File received: originalName="${req.file.originalname}", size=${req.file.size} bytes, declaredMime="${req.file.mimetype}", docType="${documentType.trim()}"`);
 
       // 2. Inspect binary file signature (magic bytes) on disk and ensure consistency with extension and MIME type
       const magicValidation = validateFileMagicBytes(req.file.path);
       if (!magicValidation.valid || !magicValidation.detected) {
         cleanupUploadedFile(req);
+        console.warn(`[Upload] File signature validation failed for file="${req.file.originalname}" on serviceRequestId=${serviceRequestId}`);
         res.status(400).json({ error: 'File signature verification failed: contents do not match allowed formats' });
         return;
       }
@@ -155,6 +177,7 @@ router.post(
       const ext = path.extname(req.file.originalname).toLowerCase();
       if (!isSignatureMatchingExtensionAndMime(magicValidation.detected, ext, req.file.mimetype)) {
         cleanupUploadedFile(req);
+        console.warn(`[Upload] File signature mismatch: detected "${magicValidation.detected}" but extension is "${ext}" and MIME is "${req.file.mimetype}"`);
         res.status(400).json({
           error: `File signature mismatch: detected ${magicValidation.detected.toUpperCase()} contents do not match the declared extension (${ext}) or MIME type (${req.file.mimetype})`,
         });
@@ -165,6 +188,8 @@ router.post(
       const safeOriginalName = path.basename(req.file.originalname).replace(/[\r\n"']/g, '_');
 
       // 4. Upload file to Cloudflare R2 (or local fallback if unconfigured)
+      const isR2 = isR2Configured();
+      console.log(`[Upload] Dispatching file to storage (provider=${isR2 ? 'r2' : 'local'}, bucket="${config.r2.bucketName}") for serviceRequestId=${serviceRequestId}`);
       const uploadResult = await uploadDocumentFile({
         localFilePath: req.file.path,
         originalName: safeOriginalName,
@@ -173,8 +198,10 @@ router.post(
         serviceRequestId: serviceRequest.id,
         documentType: documentType.trim(),
       });
+      console.log(`[Upload] Storage write successful (provider=${uploadResult.storageProvider}, key="${uploadResult.storedName}")`);
 
       // 5. Create document record - deriving customerId strictly from the database record
+      console.log(`[Upload] Creating database record for document in serviceRequestId=${serviceRequestId}`);
       let document: any;
       try {
         document = await prisma.document.create({
@@ -188,12 +215,19 @@ router.post(
             fileSize: req.file.size,
           },
         });
+        console.log(`[Upload] Document DB record created with id=${document.id}`);
 
         // Clean up temporary local file once successfully uploaded to R2
         if (uploadResult.storageProvider === 'r2') {
           cleanupUploadedFile(req);
         }
-      } catch (dbError) {
+      } catch (dbError: any) {
+        console.error(`[Upload DB Error] Failed creating document record in DB:`, {
+          name: dbError?.name,
+          message: dbError?.message,
+          code: dbError?.code,
+          stack: dbError?.stack,
+        });
         // Clean up orphaned R2 object if database insert failed
         if (uploadResult.storageProvider === 'r2') {
           await deleteOrphanedR2Object(uploadResult.storedName);
@@ -204,6 +238,7 @@ router.post(
 
       // 6. Update request status if in NEW or DOCUMENTS_REQUIRED
       if (serviceRequest.status === 'DOCUMENTS_REQUIRED' || serviceRequest.status === 'NEW') {
+        console.log(`[Upload] Updating service request status to DOCUMENTS_RECEIVED for id=${serviceRequestId}`);
         await prisma.serviceRequest.update({
           where: { id: serviceRequestId },
           data: { status: 'DOCUMENTS_RECEIVED' },
@@ -219,6 +254,7 @@ router.post(
         });
       }
 
+      console.log(`[Upload] Upload flow successfully completed for documentId=${document.id}`);
       res.status(201).json({
         message: 'Document uploaded successfully',
         document: {
@@ -229,9 +265,15 @@ router.post(
           createdAt: document.createdAt,
         },
       });
-    } catch (error) {
+    } catch (error: any) {
       cleanupUploadedFile(req);
-      console.error('Upload document error:', error);
+      console.error(`[Upload Error] Document upload failed for serviceRequestId=${serviceRequestId}:`, {
+        name: error?.name,
+        message: error?.message,
+        code: error?.code,
+        statusCode: error?.$metadata?.httpStatusCode,
+        stack: error?.stack,
+      });
       res.status(500).json({ error: 'Failed to upload document' });
     }
   }
