@@ -46,7 +46,7 @@ const allowedOrigins = [
     : []),
 ].filter(Boolean);
 
-app.use(cors({
+export const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (such as mobile apps, curl, or server-to-server calls)
     if (!origin) return callback(null, true);
@@ -60,9 +60,11 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Upload-Token', 'x-upload-token'],
   maxAge: 86400, // 24 hours preflight cache
-}));
+};
+
+app.use(cors(corsOptions));
 
 // Rate limiting for public API endpoints
 const publicLimiter = rateLimit({

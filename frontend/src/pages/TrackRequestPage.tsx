@@ -139,9 +139,10 @@ const TrackRequestPage = () => {
 
     try {
       // Upload using request ID with signed authorization token
+      // Omit manual Content-Type so Axios/browser automatically attaches multipart boundary
       const uploadRes = await api.post(`/documents/upload/${requestData.request.id}`, formData, {
         headers: {
-          'Content-Type': 'multipart/form-data',
+          'Authorization': `Bearer ${uploadToken}`,
           'X-Upload-Token': uploadToken,
         },
       });
@@ -156,7 +157,11 @@ const TrackRequestPage = () => {
         } : prev);
       }
     } catch (error: any) {
-      const errorMsg = error.response?.data?.error || 'Failed to upload document';
+      console.error('File upload error details:', error);
+      const errorMsg =
+        error.response?.data?.error ||
+        error.message ||
+        'Failed to upload document';
       toast.error(errorMsg);
       if (error.response?.status === 401 || error.response?.status === 403) {
         setUploadToken(null);

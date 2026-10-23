@@ -34,6 +34,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import express, { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import path from 'path';
 import fs from 'fs';
@@ -51,6 +52,13 @@ import { encryptData } from '../src/utils/helpers';
 function createTestServer() {
   const app = express();
   app.set('trust proxy', 1);
+  app.use(cors({
+    origin: (origin, callback) => callback(null, true),
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Upload-Token', 'x-upload-token'],
+    maxAge: 86400,
+  }));
   app.use(express.json());
   app.use('/api/documents', documentRoutes);
   app.use('/api/service-requests', serviceRequestRoutes);
@@ -849,6 +857,44 @@ test('Document Upload Security & File Validation Suite', async (t) => {
       });
       assert.strictEqual(res.status, 403);
     }
+  });
+
+  await t.test('23. Upload authorization accepts standard Authorization Bearer token header', async () => {
+    const validToken = makeValidToken('req-status-docs-required', 'REQ-STATUS-02');
+    const formData = new FormData();
+    formData.append('documentType', 'Identity Proof');
+    const blob = new Blob([validPdfBytes], { type: 'application/pdf' });
+    formData.append('file', blob, 'identity-bearer.pdf');
+
+    const res = await fetch(`${baseUrl}/api/documents/upload/req-status-docs-required`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${validToken}`,
+        'X-Forwarded-For': getNextIp(),
+      },
+      body: formData,
+    });
+
+    assert.strictEqual(res.status, 201, 'Upload must succeed with Authorization Bearer header');
+    const body: any = await res.json();
+    assert.strictEqual(body.message, 'Document uploaded successfully');
+    assert.strictEqual(body.document.documentType, 'Identity Proof');
+  });
+
+  await t.test('24. CORS preflight OPTIONS request permits X-Upload-Token header', async () => {
+    const res = await fetch(`${baseUrl}/api/documents/upload/req-status-docs-required`, {
+      method: 'OPTIONS',
+      headers: {
+        'Origin': 'https://financial-services-web.onrender.com',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'content-type, x-upload-token, authorization',
+      },
+    });
+
+    assert.strictEqual(res.status, 204, 'CORS preflight OPTIONS must return 204');
+    const allowHeaders = (res.headers.get('access-control-allow-headers') || '').toLowerCase();
+    assert.ok(allowHeaders.includes('x-upload-token'), `CORS must permit x-upload-token in allowed headers, got: ${allowHeaders}`);
+    assert.ok(allowHeaders.includes('authorization'), `CORS must permit authorization in allowed headers, got: ${allowHeaders}`);
   });
 
   server.close();
