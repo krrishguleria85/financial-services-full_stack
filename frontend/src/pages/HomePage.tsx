@@ -107,23 +107,26 @@ const HomePage = () => {
       <section className="bg-gradient-to-br from-slate-900 to-primary-900 text-white py-20 lg:py-32 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 items-center">
           <div className="space-y-6">
-            <div className="flex flex-wrap gap-2">
-              <div className="inline-flex items-center gap-2 bg-amber-900/40 text-amber-200 border border-amber-600/50 px-4 py-2 rounded-full font-medium">
-                <ShieldCheck className="w-5 h-5 text-amber-400" />
-                Authorized LIC Partner Agent
-              </div>
-              <div className="inline-flex items-center gap-2 bg-blue-900/50 text-blue-200 border border-blue-700/50 px-4 py-2 rounded-full font-medium">
-                <ShieldCheck className="w-5 h-5 text-blue-400" />
-                Authorized Star Health Insurance Agent
-              </div>
+
+            <div className="inline-flex items-center gap-2 bg-blue-900/50 text-blue-200 border border-blue-700/50 px-4 py-2 rounded-full font-medium">
+              <ShieldCheck className="w-5 h-5 text-blue-400" />
+              Authorized LIC Agent
             </div>
+
+            <div className="inline-flex items-center gap-2 bg-blue-900/50 text-blue-200 border border-blue-700/50 px-4 py-2 rounded-full font-medium">
+              <ShieldCheck className="w-5 h-5 text-blue-400" />
+              Authorized Star Health Insurance Agent
+            </div>
+
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight">
               Your Trusted Partner for <span className="text-gold-500">LIC, Star Health Insurance, Tax & GST</span> Services
             </h1>
             <p className="text-lg sm:text-xl text-slate-300 max-w-2xl">
-              Professional assistance for LIC, Star Health Insurance, Income Tax Returns, GST and financial documentation. Reliable, secure, and hassle-free.
+              Professional assistance for Star Health Insurance, LIC, Income Tax Returns, GST and financial documentation. Reliable, secure, and hassle-free.
             </p>
+
             <div className="flex flex-wrap gap-3 pt-4">
+
               {/* LIC Insurance with Real Logo */}
               <Link
                 to="/services/lic-insurance-services?request=true"
