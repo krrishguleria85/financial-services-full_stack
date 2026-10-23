@@ -104,8 +104,8 @@ test('Email OTP Verification Suite', async (t) => {
     customerId: testCustomer.id,
     serviceId: 'srv-1',
     status: 'DOCUMENTS_REQUIRED',
-    panEncrypted: null,
-    formDataEncrypted: null,
+    panEncrypted: null as string | null,
+    formDataEncrypted: null as string | null,
     documents: [],
     statusHistory: [
       { id: 'sh-1', newStatus: 'DOCUMENTS_REQUIRED', note: 'Please upload Form 16', createdAt: new Date() },
@@ -121,8 +121,8 @@ test('Email OTP Verification Suite', async (t) => {
     customerId: testCustomerNoEmail.id,
     serviceId: 'srv-1',
     status: 'DOCUMENTS_REQUIRED',
-    panEncrypted: null,
-    formDataEncrypted: null,
+    panEncrypted: null as string | null,
+    formDataEncrypted: null as string | null,
     documents: [],
     statusHistory: [],
     createdAt: new Date(),
@@ -223,6 +223,54 @@ test('Email OTP Verification Suite', async (t) => {
       count++;
     }
     return { count };
+  };
+
+  (prisma.emailOtp as any).findUnique = async (query: any) => {
+    return mockDb.emailOtps.get(query?.where?.id) || null;
+  };
+
+  const rowLocks = new Map<string, Promise<void>>();
+  const releaseFns = new Map<string, () => void>();
+
+  (prisma as any).$executeRaw = async () => 1;
+
+  (prisma as any).$transaction = async (fnOrOps: any) => {
+    if (typeof fnOrOps === 'function') {
+      const activeLocks: string[] = [];
+      const txPrisma = Object.create(prisma);
+      txPrisma.$executeRaw = async (strings: any, ...values: any[]) => {
+        const sql = strings ? (typeof strings === 'string' ? strings : strings.join('?')) : '';
+        if (sql.toUpperCase().includes('FOR UPDATE') && values.length > 0) {
+          const lockKey = String(values[0]);
+          while (rowLocks.has(lockKey) && !activeLocks.includes(lockKey)) {
+            await rowLocks.get(lockKey);
+          }
+          if (!activeLocks.includes(lockKey)) {
+            let release: () => void;
+            const promise = new Promise<void>((resolve) => {
+              release = resolve;
+            });
+            rowLocks.set(lockKey, promise);
+            releaseFns.set(lockKey, release!);
+            activeLocks.push(lockKey);
+          }
+        }
+        return 1;
+      };
+
+      try {
+        const result = await fnOrOps(txPrisma);
+        return result;
+      } finally {
+        for (const lockKey of activeLocks) {
+          const release = releaseFns.get(lockKey);
+          if (release) release();
+          rowLocks.delete(lockKey);
+          releaseFns.delete(lockKey);
+        }
+      }
+    }
+    return Promise.all(fnOrOps);
   };
 
   t.after(() => {
@@ -527,10 +575,12 @@ test('Email OTP Verification Suite', async (t) => {
     // Verify data sanitization
     assert.strictEqual(body.request.requestId, 'REQ-2026-OTP01');
     assert.strictEqual(body.request.status, 'DOCUMENTS_REQUIRED');
-    assert.strictEqual(body.request.customer.name, 'Rahul Sharma');
-    // Ensure customer phone and email are not exposed in public sanitized request object
-    assert.strictEqual(body.request.customer.phone, undefined);
-    assert.strictEqual(body.request.customer.email, undefined);
+    assert.strictEqual((body.request as any).customer, undefined, 'Customer object must not be exposed');
+    assert.strictEqual((body.request as any).panEncrypted, undefined, 'PAN must not be exposed');
+    assert.strictEqual((body.request as any).policyNumber, undefined, 'Policy number must not be exposed');
+    assert.strictEqual((body.request as any).priority, undefined, 'Priority must not be exposed');
+    assert.strictEqual((body as any).timeline, undefined, 'Timeline must not be exposed');
+    assert.strictEqual(body.request.adminNotes, null, 'Internal notes must not be leaked');
     // Ensure raw hashes/salts are never returned
     assert.strictEqual((body as any).codeHash, undefined);
     assert.strictEqual((body as any).salt, undefined);
@@ -830,5 +880,346 @@ test('Email OTP Verification Suite', async (t) => {
     // Fails fast when secret is empty or whitespace
     assert.throws(() => getOtpHmacKey(''), /FATAL: Cannot derive OTP HMAC key because JWT secret is missing or empty/);
     assert.throws(() => getOtpHmacKey('   '), /FATAL: Cannot derive OTP HMAC key because JWT secret is missing or empty/);
+  });
+
+  await t.test('15. Concurrent OTP requests: simultaneous requests cannot bypass 60s cooldown or duplicate active OTPs', async () => {
+    clearMockSentEmails();
+    mockDb.emailOtps.clear();
+
+    // Fire 2 concurrent requests for the exact same service request from unique IPs
+    const [res1, res2] = await Promise.all([
+      fetch(`${baseUrl}/track/request-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Forwarded-For': '10.50.1.1',
+        },
+        body: JSON.stringify({
+          requestId: 'REQ-2026-OTP01',
+          phone: '9876543210',
+        }),
+      }),
+      fetch(`${baseUrl}/track/request-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Forwarded-For': '10.50.1.2',
+        },
+        body: JSON.stringify({
+          requestId: 'REQ-2026-OTP01',
+          phone: '9876543210',
+        }),
+      }),
+    ]);
+
+    const statuses = [res1.status, res2.status].sort();
+    assert.deepStrictEqual(statuses, [200, 429], 'Exactly one request must succeed and the other must hit cooldown (429)');
+
+    const errRes = res1.status === 429 ? res1 : res2;
+    const errBody = await errRes.json();
+    assert.ok(errBody.error.includes('Please wait'));
+    assert.strictEqual(typeof errBody.cooldownSeconds, 'number');
+
+    // Exactly one active OTP should have been created in the database
+    const unconsumedOtps = Array.from(mockDb.emailOtps.values()).filter((o) => o.consumedAt === null);
+    assert.strictEqual(unconsumedOtps.length, 1, 'Only one active OTP must exist');
+
+    // Exactly one email should have been dispatched via Resend
+    assert.strictEqual(getMockSentEmails().length, 1, 'Only one email must be sent');
+  });
+
+  await t.test('16. Concurrent OTP lockout: parallel incorrect guesses cannot exceed maxAttempts without lockout', async () => {
+    mockDb.emailOtps.clear();
+
+    // Create an active OTP record with 0 attempts
+    const validSalt = generateSalt();
+    const correctCode = '888888';
+    const otpId = 'otp-concurrent-lockout';
+    const concurrentLockoutOtp = {
+      id: otpId,
+      serviceRequestId: testRequest.id,
+      email: testCustomer.email,
+      salt: validSalt,
+      codeHash: hashOtp(correctCode, validSalt),
+      attempts: 0,
+      maxAttempts: 5,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      consumedAt: null,
+      createdAt: new Date(),
+    };
+    mockDb.emailOtps.set(otpId, concurrentLockoutOtp);
+
+    // Fire 5 parallel incorrect guesses from different IP addresses
+    const responses = await Promise.all(
+      [1, 2, 3, 4, 5].map((i) =>
+        fetch(`${baseUrl}/track/verify-otp`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Forwarded-For': `10.60.1.${i}`,
+          },
+          body: JSON.stringify({
+            requestId: 'REQ-2026-OTP01',
+            phone: '9876543210',
+            otp: `00000${i}`,
+          }),
+        })
+      )
+    );
+
+    // All 5 must fail with status 400
+    for (const r of responses) {
+      assert.strictEqual(r.status, 400);
+    }
+
+    const bodies = await Promise.all(responses.map((r) => r.json()));
+    const lockoutBodies = bodies.filter((b) => b.error.includes('Maximum verification attempts exceeded'));
+    assert.ok(lockoutBodies.length >= 1, 'Lockout message must be triggered when maxAttempts reached');
+
+    // The record in mockDb must have reached attempts 5 and consumedAt must NOT be null
+    const finalOtp = mockDb.emailOtps.get(otpId);
+    assert.strictEqual(finalOtp.attempts, 5, 'Attempts must strictly equal maxAttempts (5)');
+    assert.ok(finalOtp.consumedAt !== null, 'OTP must be marked consumed upon reaching maxAttempts');
+
+    // A 6th attempt must be rejected as locked out / consumed without increasing attempts
+    const sixthRes = await fetch(`${baseUrl}/track/verify-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': '10.60.1.6',
+      },
+      body: JSON.stringify({
+        requestId: 'REQ-2026-OTP01',
+        phone: '9876543210',
+        otp: '000006',
+      }),
+    });
+    assert.strictEqual(sixthRes.status, 400);
+    const sixthBody = await sixthRes.json();
+    assert.ok(sixthBody.error.includes('Maximum verification attempts exceeded') || sixthBody.error.includes('Invalid or expired'));
+    assert.strictEqual(finalOtp.attempts, 5, 'Attempts must not increment beyond 5');
+  });
+
+  await t.test('17. Failed email delivery does not leave usable orphan OTP and leaves newer OTP intact', async () => {
+    clearMockSentEmails();
+    mockDb.emailOtps.clear();
+
+    // 1. Simulate email delivery failure
+    setMockEmailSender(async () => ({ success: false, error: 'Resend API rate limit or network failure' }));
+
+    const failReqRes = await fetch(`${baseUrl}/track/request-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': '10.70.1.1',
+      },
+      body: JSON.stringify({
+        requestId: 'REQ-2026-OTP01',
+        phone: '9876543210',
+      }),
+    });
+
+    // In non-production, returns 200 genericSuccess, but OTP must be neutralized
+    assert.strictEqual(failReqRes.status, 200);
+    const failedOtps = Array.from(mockDb.emailOtps.values());
+    assert.strictEqual(failedOtps.length, 1);
+    const orphanOtp = failedOtps[0];
+    assert.ok(orphanOtp.consumedAt !== null, 'Unsent OTP must be immediately marked consumed so it cannot be used');
+
+    // Attempting to verify this orphan OTP must fail
+    const orphanVerifyRes = await fetch(`${baseUrl}/track/verify-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': '10.70.1.2',
+      },
+      body: JSON.stringify({
+        requestId: 'REQ-2026-OTP01',
+        phone: '9876543210',
+        otp: '123456',
+      }),
+    });
+    assert.strictEqual(orphanVerifyRes.status, 400);
+
+    // 2. Restore working email sender
+    setMockEmailSender(null);
+
+    // 3. Fast-forward past cooldown to generate a successful new OTP
+    orphanOtp.createdAt = new Date(Date.now() - 70 * 1000);
+
+    const successReqRes = await fetch(`${baseUrl}/track/request-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': '10.70.1.3',
+      },
+      body: JSON.stringify({
+        requestId: 'REQ-2026-OTP01',
+        phone: '9876543210',
+      }),
+    });
+    assert.strictEqual(successReqRes.status, 200);
+
+    const newOtps = Array.from(mockDb.emailOtps.values()).filter((o) => o.id !== orphanOtp.id);
+    assert.strictEqual(newOtps.length, 1);
+    const validOtp = newOtps[0];
+    assert.strictEqual(validOtp.consumedAt, null, 'New OTP must be unconsumed and usable');
+
+    // 4. Extract code from sent email and verify that the new OTP verifies successfully
+    const sent = getMockSentEmails();
+    const match = sent[sent.length - 1].text?.match(/\b\d{6}\b/);
+    assert.ok(match);
+    const validCode = match[0];
+
+    const verifyRes = await fetch(`${baseUrl}/track/verify-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': '10.70.1.4',
+      },
+      body: JSON.stringify({
+        requestId: 'REQ-2026-OTP01',
+        phone: '9876543210',
+        otp: validCode,
+      }),
+    });
+    assert.strictEqual(verifyRes.status, 200);
+    assert.ok(validOtp.consumedAt !== null, 'New OTP is now consumed');
+  });
+
+  await t.test('18. Customer verification response strictly minimizes fields and hides internal notes', async () => {
+    // Seed request with sensitive fields and internal notes
+    (testRequest as any).panEncrypted = 'ENC:SENSITIVE_PAN';
+    (testRequest as any).policyNumber = 'LIC-987654321';
+    (testRequest as any).priority = 'urgent';
+    (testRequest as any).statusHistory = [
+      { id: 'sh-1', newStatus: 'DOCUMENTS_REQUIRED', note: 'Customer under internal review for discrepancies', createdAt: new Date() },
+      { id: 'sh-2', newStatus: 'UNDER_REVIEW', note: 'Admin internal note: verify tax filings with authorities', createdAt: new Date() },
+    ];
+
+    const validSalt = generateSalt();
+    const validCode = '555123';
+    const minTestOtp = {
+      id: 'otp-minimized-payload',
+      serviceRequestId: testRequest.id,
+      email: testCustomer.email,
+      salt: validSalt,
+      codeHash: hashOtp(validCode, validSalt),
+      attempts: 0,
+      maxAttempts: 5,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      consumedAt: null,
+      createdAt: new Date(),
+    };
+    mockDb.emailOtps.set(minTestOtp.id, minTestOtp);
+
+    const res = await fetch(`${baseUrl}/track/verify-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': '10.80.1.1',
+      },
+      body: JSON.stringify({
+        requestId: 'REQ-2026-OTP01',
+        phone: '9876543210',
+        otp: validCode,
+      }),
+    });
+
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+
+    // Required fields must exist
+    assert.strictEqual(body.success, true);
+    assert.ok(body.uploadToken);
+    assert.strictEqual(body.request.id, testRequest.id);
+    assert.strictEqual(body.request.requestId, testRequest.requestId);
+    assert.strictEqual(body.request.status, 'DOCUMENTS_REQUIRED');
+    assert.strictEqual(body.request.service.name, 'Income Tax Return (ITR)');
+    assert.ok(Array.isArray(body.documents));
+
+    // Excluded fields must be strictly undefined
+    assert.strictEqual((body.request as any).panEncrypted, undefined, 'panEncrypted must NOT be returned');
+    assert.strictEqual((body.request as any).policyNumber, undefined, 'policyNumber must NOT be returned');
+    assert.strictEqual((body.request as any).priority, undefined, 'priority must NOT be returned');
+    assert.strictEqual((body.request as any).customer, undefined, 'customer object must NOT be returned');
+    assert.strictEqual((body.request as any).message, undefined, 'message must NOT be returned');
+    assert.strictEqual((body.request as any).assessmentYear, undefined, 'assessmentYear must NOT be returned');
+    assert.strictEqual((body.request as any).incomeType, undefined, 'incomeType must NOT be returned');
+    assert.strictEqual((body.request as any).businessName, undefined, 'businessName must NOT be returned');
+    assert.strictEqual((body.request as any).gstStatus, undefined, 'gstStatus must NOT be returned');
+    assert.strictEqual((body as any).timeline, undefined, 'timeline array must NOT be returned');
+
+    // adminNotes must be null (no internal statusHistory or AdminNote leak)
+    assert.strictEqual(body.request.adminNotes, null, 'adminNotes must be null to prevent internal notes leak');
+  });
+
+  await t.test('19. Replaced and expired OTP verification rejection', async () => {
+    // 1. Expired OTP
+    const expiredSalt = generateSalt();
+    const expiredCode = '111222';
+    const expiredOtp = {
+      id: 'otp-expired-test',
+      serviceRequestId: testRequest.id,
+      email: testCustomer.email,
+      salt: expiredSalt,
+      codeHash: hashOtp(expiredCode, expiredSalt),
+      attempts: 0,
+      maxAttempts: 5,
+      expiresAt: new Date(Date.now() - 5 * 1000), // Expired 5 seconds ago
+      consumedAt: null,
+      createdAt: new Date(Date.now() - 11 * 60 * 1000),
+    };
+    mockDb.emailOtps.set(expiredOtp.id, expiredOtp);
+
+    const expRes = await fetch(`${baseUrl}/track/verify-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': '10.90.1.1',
+      },
+      body: JSON.stringify({
+        requestId: 'REQ-2026-OTP01',
+        phone: '9876543210',
+        otp: expiredCode,
+      }),
+    });
+    assert.strictEqual(expRes.status, 400);
+    const expBody = await expRes.json();
+    assert.ok(expBody.error.includes('expired'));
+    assert.ok(expiredOtp.consumedAt !== null, 'Expired OTP must be marked consumed');
+
+    // 2. Replaced OTP (an older OTP whose consumedAt is not null because a newer one was issued)
+    const replacedSalt = generateSalt();
+    const replacedCode = '333444';
+    const replacedOtp = {
+      id: 'otp-replaced-test',
+      serviceRequestId: testRequest.id,
+      email: testCustomer.email,
+      salt: replacedSalt,
+      codeHash: hashOtp(replacedCode, replacedSalt),
+      attempts: 0,
+      maxAttempts: 5,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      consumedAt: new Date(), // Already invalidated/consumed
+      createdAt: new Date(Date.now() - 2 * 60 * 1000),
+    };
+    mockDb.emailOtps.set(replacedOtp.id, replacedOtp);
+
+    const replacedRes = await fetch(`${baseUrl}/track/verify-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': '10.90.1.2',
+      },
+      body: JSON.stringify({
+        requestId: 'REQ-2026-OTP01',
+        phone: '9876543210',
+        otp: replacedCode,
+      }),
+    });
+    assert.strictEqual(replacedRes.status, 400);
+    const replacedBody = await replacedRes.json();
+    assert.ok(replacedBody.error.includes('Invalid or expired'));
   });
 });

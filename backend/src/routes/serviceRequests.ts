@@ -34,8 +34,21 @@ export const trackingLimiter = rateLimit({
   message: { error: 'Too many tracking requests. Please try again after 15 minutes.' },
 });
 
-// POST /api/service-requests/track/request-otp - Request 6-digit email OTP for tracking and upload authorization
-router.post('/track/request-otp', otpRequestLimiter, async (req: Request, res: Response): Promise<void> => {
+export class OtpCooldownError extends Error {
+  remainingSeconds: number;
+  constructor(remainingSeconds: number) {
+    super(`Please wait ${remainingSeconds} second${remainingSeconds === 1 ? '' : 's'} before requesting another code.`);
+    this.name = 'OtpCooldownError';
+    this.remainingSeconds = remainingSeconds;
+  }
+}
+
+/**
+ * Shared, concurrency-safe handler for requesting and resending 6-digit email OTPs.
+ * Atomically checks cooldown, invalidates older active OTPs, and creates a new OTP record
+ * under a database row lock without holding transactions open during email delivery.
+ */
+async function handleOtpRequestFlow(req: Request, res: Response): Promise<void> {
   try {
     const { requestId, phone } = req.body;
 
@@ -74,61 +87,79 @@ router.post('/track/request-otp', otpRequestLimiter, async (req: Request, res: R
       return;
     }
 
-    // Check 60-second cooldown on the specific serviceRequest
     const COOLDOWN_MS = 60 * 1000;
-    const latestOtp = await prisma.emailOtp.findFirst({
-      where: { serviceRequestId: serviceRequest.id },
-      orderBy: { createdAt: 'desc' },
-    });
+    let newOtpRecord: any;
+    let otpToEmail: string;
 
-    if (latestOtp && Date.now() - latestOtp.createdAt.getTime() < COOLDOWN_MS) {
-      const remainingSeconds = Math.ceil((COOLDOWN_MS - (Date.now() - latestOtp.createdAt.getTime())) / 1000);
-      res.status(429).json({
-        error: `Please wait ${remainingSeconds} second${remainingSeconds === 1 ? '' : 's'} before requesting another code.`,
-        cooldownSeconds: remainingSeconds,
+    try {
+      const txResult = await prisma.$transaction(async (tx) => {
+        // Row-lock the ServiceRequest in PostgreSQL to serialize concurrent OTP requests for this request
+        await tx.$executeRaw`SELECT id FROM "ServiceRequest" WHERE id = ${serviceRequest.id} FOR UPDATE`;
+
+        const latestOtp = await tx.emailOtp.findFirst({
+          where: { serviceRequestId: serviceRequest.id },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        if (latestOtp && Date.now() - latestOtp.createdAt.getTime() < COOLDOWN_MS) {
+          const remainingSeconds = Math.ceil((COOLDOWN_MS - (Date.now() - latestOtp.createdAt.getTime())) / 1000);
+          throw new OtpCooldownError(remainingSeconds);
+        }
+
+        // Atomically invalidate any existing unconsumed active OTPs for this service request
+        await tx.emailOtp.updateMany({
+          where: {
+            serviceRequestId: serviceRequest.id,
+            consumedAt: null,
+          },
+          data: {
+            consumedAt: new Date(),
+          },
+        });
+
+        // Generate fresh cryptographic 6-digit OTP and salt
+        const otp = generateOtp();
+        const salt = generateSalt();
+        const codeHash = hashOtp(otp, salt);
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+        // Persist OTP record in database
+        const created = await tx.emailOtp.create({
+          data: {
+            serviceRequestId: serviceRequest.id,
+            email: customerEmail,
+            codeHash,
+            salt,
+            attempts: 0,
+            maxAttempts: 5,
+            expiresAt,
+          },
+        });
+
+        return { created, otp };
       });
-      return;
+
+      newOtpRecord = txResult.created;
+      otpToEmail = txResult.otp;
+    } catch (txError: any) {
+      if (txError instanceof OtpCooldownError || txError?.name === 'OtpCooldownError') {
+        res.status(429).json({
+          error: txError.message,
+          cooldownSeconds: txError.remainingSeconds,
+        });
+        return;
+      }
+      throw txError;
     }
 
-    // Invalidate any existing unconsumed active OTPs for this service request
-    await prisma.emailOtp.updateMany({
-      where: {
-        serviceRequestId: serviceRequest.id,
-        consumedAt: null,
-      },
-      data: {
-        consumedAt: new Date(),
-      },
-    });
-
-    // Generate fresh cryptographic 6-digit OTP and salt
-    const otp = generateOtp();
-    const salt = generateSalt();
-    const codeHash = hashOtp(otp, salt);
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-    // Persist OTP record in database
-    await prisma.emailOtp.create({
-      data: {
-        serviceRequestId: serviceRequest.id,
-        email: customerEmail,
-        codeHash,
-        salt,
-        attempts: 0,
-        maxAttempts: 5,
-        expiresAt,
-      },
-    });
-
-    // Render email template
+    // Database transaction is committed. Dispatch email without holding DB connection open.
     const emailContent = renderOtpEmail({
       customerName: serviceRequest.customer.name,
       requestId: serviceRequest.requestId,
-      otp,
+      otp: otpToEmail,
       expiresInMinutes: 10,
     });
 
-    // Dispatch via Resend email service
     const sendResult = await sendEmail({
       to: customerEmail,
       subject: emailContent.subject,
@@ -138,6 +169,19 @@ router.post('/track/request-otp', otpRequestLimiter, async (req: Request, res: R
 
     if (!sendResult.success) {
       console.error(`Failed to dispatch OTP for request ${serviceRequest.requestId}:`, sendResult.error);
+
+      // Invalidate ONLY this specific OTP record, and only if still unconsumed.
+      // This ensures no ghost OTP is usable while leaving any newer OTP intact.
+      await prisma.emailOtp.updateMany({
+        where: {
+          id: newOtpRecord.id,
+          consumedAt: null,
+        },
+        data: {
+          consumedAt: new Date(),
+        },
+      });
+
       if (config.nodeEnv === 'production') {
         res.status(502).json({ error: 'Unable to deliver verification code. Please try again later.' });
         return;
@@ -146,120 +190,16 @@ router.post('/track/request-otp', otpRequestLimiter, async (req: Request, res: R
 
     res.json(genericSuccess);
   } catch (error) {
-    console.error('Request OTP error:', error);
+    console.error('Request/resend OTP error:', error);
     res.status(500).json({ error: 'Failed to process verification code request.' });
   }
-});
+}
+
+// POST /api/service-requests/track/request-otp - Request 6-digit email OTP for tracking and upload authorization
+router.post('/track/request-otp', otpRequestLimiter, handleOtpRequestFlow);
 
 // POST /api/service-requests/track/resend-otp - Resend 6-digit OTP alias
-router.post('/track/resend-otp', otpRequestLimiter, async (req: Request, res: Response): Promise<void> => {
-  // Reuse request-otp implementation directly
-  try {
-    const { requestId, phone } = req.body;
-
-    if (!requestId || typeof requestId !== 'string' || !phone || typeof phone !== 'string') {
-      res.status(400).json({ error: 'Request ID and mobile number are required' });
-      return;
-    }
-
-    const cleanId = requestId.trim();
-    const cleanPhone = phone.replace(/[\s\-+]/g, '').replace(/^91/, '');
-    if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
-      res.status(400).json({ error: 'Please enter a valid 10-digit mobile number' });
-      return;
-    }
-
-    const genericSuccess = {
-      success: true,
-      message: 'If the provided details match an active request with a registered email, a verification code has been sent.',
-    };
-
-    const serviceRequest = await prisma.serviceRequest.findFirst({
-      where: {
-        requestId: cleanId,
-        customer: { phone: cleanPhone },
-      },
-      include: {
-        customer: true,
-      },
-    });
-
-    const customerEmail = serviceRequest?.customer?.email ? serviceRequest.customer.email.trim() : null;
-    if (!serviceRequest || !customerEmail) {
-      res.json(genericSuccess);
-      return;
-    }
-
-    const COOLDOWN_MS = 60 * 1000;
-    const latestOtp = await prisma.emailOtp.findFirst({
-      where: { serviceRequestId: serviceRequest.id },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (latestOtp && Date.now() - latestOtp.createdAt.getTime() < COOLDOWN_MS) {
-      const remainingSeconds = Math.ceil((COOLDOWN_MS - (Date.now() - latestOtp.createdAt.getTime())) / 1000);
-      res.status(429).json({
-        error: `Please wait ${remainingSeconds} second${remainingSeconds === 1 ? '' : 's'} before requesting another code.`,
-        cooldownSeconds: remainingSeconds,
-      });
-      return;
-    }
-
-    await prisma.emailOtp.updateMany({
-      where: {
-        serviceRequestId: serviceRequest.id,
-        consumedAt: null,
-      },
-      data: {
-        consumedAt: new Date(),
-      },
-    });
-
-    const otp = generateOtp();
-    const salt = generateSalt();
-    const codeHash = hashOtp(otp, salt);
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-    await prisma.emailOtp.create({
-      data: {
-        serviceRequestId: serviceRequest.id,
-        email: customerEmail,
-        codeHash,
-        salt,
-        attempts: 0,
-        maxAttempts: 5,
-        expiresAt,
-      },
-    });
-
-    const emailContent = renderOtpEmail({
-      customerName: serviceRequest.customer.name,
-      requestId: serviceRequest.requestId,
-      otp,
-      expiresInMinutes: 10,
-    });
-
-    const sendResult = await sendEmail({
-      to: customerEmail,
-      subject: emailContent.subject,
-      html: emailContent.html,
-      text: emailContent.text,
-    });
-
-    if (!sendResult.success) {
-      console.error(`Failed to resend OTP for request ${serviceRequest.requestId}:`, sendResult.error);
-      if (config.nodeEnv === 'production') {
-        res.status(502).json({ error: 'Unable to deliver verification code. Please try again later.' });
-        return;
-      }
-    }
-
-    res.json(genericSuccess);
-  } catch (error) {
-    console.error('Resend OTP error:', error);
-    res.status(500).json({ error: 'Failed to process verification code request.' });
-  }
-});
+router.post('/track/resend-otp', otpRequestLimiter, handleOtpRequestFlow);
 
 // POST /api/service-requests/track/verify-otp - Verify 6-digit OTP and authorize tracking & document upload
 router.post('/track/verify-otp', otpVerifyLimiter, async (req: Request, res: Response): Promise<void> => {
@@ -287,12 +227,7 @@ router.post('/track/verify-otp', otpVerifyLimiter, async (req: Request, res: Res
       },
       include: {
         service: true,
-        customer: { select: { name: true, phone: true, email: true } },
         documents: true,
-        statusHistory: {
-          orderBy: { createdAt: 'asc' },
-          select: { newStatus: true, createdAt: true, note: true },
-        },
       },
     });
 
@@ -301,83 +236,106 @@ router.post('/track/verify-otp', otpVerifyLimiter, async (req: Request, res: Res
       return;
     }
 
-    // Find latest active unconsumed OTP for this service request
-    const activeOtp = await prisma.emailOtp.findFirst({
-      where: {
-        serviceRequestId: serviceRequest.id,
-        consumedAt: null,
-      },
-      orderBy: { createdAt: 'desc' },
+    // Concurrency-safe verification inside an interactive transaction with row-level locking
+    const verifyResult = await prisma.$transaction(async (tx) => {
+      // Find latest active unconsumed OTP for this service request
+      const candidateOtp = await tx.emailOtp.findFirst({
+        where: {
+          serviceRequestId: serviceRequest.id,
+          consumedAt: null,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (!candidateOtp) {
+        return { status: 'NOT_FOUND' as const };
+      }
+
+      // Lock this specific OTP row FOR UPDATE in PostgreSQL to serialize concurrent verification/attempts
+      await tx.$executeRaw`SELECT id FROM "EmailOtp" WHERE id = ${candidateOtp.id} FOR UPDATE`;
+
+      // Re-fetch after acquiring exclusive lock to ensure fresh, committed row state
+      const activeOtp = await tx.emailOtp.findUnique({
+        where: { id: candidateOtp.id },
+      });
+
+      if (!activeOtp || activeOtp.consumedAt !== null) {
+        return { status: 'ALREADY_CONSUMED' as const };
+      }
+
+      // Check expiration
+      if (activeOtp.expiresAt.getTime() < Date.now()) {
+        await tx.emailOtp.update({
+          where: { id: activeOtp.id },
+          data: { consumedAt: new Date() },
+        });
+        return { status: 'EXPIRED' as const };
+      }
+
+      // Check maximum attempts
+      if (activeOtp.attempts >= activeOtp.maxAttempts) {
+        await tx.emailOtp.update({
+          where: { id: activeOtp.id },
+          data: { consumedAt: new Date() },
+        });
+        return { status: 'LOCKED_OUT' as const };
+      }
+
+      // Constant-time hash verification
+      const isValid = verifyOtpHash(cleanOtp, activeOtp.salt, activeOtp.codeHash);
+
+      if (!isValid) {
+        const nextAttempts = activeOtp.attempts + 1;
+        const isNowLocked = nextAttempts >= activeOtp.maxAttempts;
+
+        await tx.emailOtp.update({
+          where: { id: activeOtp.id },
+          data: {
+            attempts: nextAttempts,
+            ...(isNowLocked ? { consumedAt: new Date() } : {}),
+          },
+        });
+
+        return {
+          status: 'INVALID_CODE' as const,
+          isNowLocked,
+          remaining: Math.max(0, activeOtp.maxAttempts - nextAttempts),
+        };
+      }
+
+      // Atomically consume single-use OTP
+      await tx.emailOtp.update({
+        where: { id: activeOtp.id },
+        data: { consumedAt: new Date() },
+      });
+
+      return { status: 'SUCCESS' as const };
     });
 
-    if (!activeOtp) {
+    if (verifyResult.status === 'NOT_FOUND' || verifyResult.status === 'ALREADY_CONSUMED') {
       res.status(400).json({ error: 'Invalid or expired verification code.' });
       return;
     }
 
-    // Check expiration
-    if (activeOtp.expiresAt.getTime() < Date.now()) {
-      await prisma.emailOtp.update({
-        where: { id: activeOtp.id },
-        data: { consumedAt: new Date() },
-      });
+    if (verifyResult.status === 'EXPIRED') {
       res.status(400).json({ error: 'Verification code has expired. Please request a new code.' });
       return;
     }
 
-    // Check maximum attempts
-    if (activeOtp.attempts >= activeOtp.maxAttempts) {
-      await prisma.emailOtp.update({
-        where: { id: activeOtp.id },
-        data: { consumedAt: new Date() },
-      });
+    if (verifyResult.status === 'LOCKED_OUT') {
       res.status(400).json({ error: 'Maximum verification attempts exceeded. Please request a new code.' });
       return;
     }
 
-    // Constant-time hash verification
-    const isValid = verifyOtpHash(cleanOtp, activeOtp.salt, activeOtp.codeHash);
-
-    if (!isValid) {
-      const nextAttempts = activeOtp.attempts + 1;
-      const isNowLocked = nextAttempts >= activeOtp.maxAttempts;
-
-      await prisma.emailOtp.update({
-        where: { id: activeOtp.id },
-        data: {
-          attempts: { increment: 1 },
-          ...(isNowLocked ? { consumedAt: new Date() } : {}),
-        },
-      });
-
-      if (isNowLocked) {
+    if (verifyResult.status === 'INVALID_CODE') {
+      if (verifyResult.isNowLocked) {
         res.status(400).json({ error: 'Maximum verification attempts exceeded. Please request a new code.' });
       } else {
-        const remaining = activeOtp.maxAttempts - nextAttempts;
+        const remaining = verifyResult.remaining;
         res.status(400).json({ error: `Invalid verification code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.` });
       }
       return;
     }
-
-    // Atomically consume single-use OTP with concurrency protection
-    const consumeResult = await prisma.emailOtp.updateMany({
-      where: {
-        id: activeOtp.id,
-        consumedAt: null,
-      },
-      data: { consumedAt: new Date() },
-    });
-
-    if (consumeResult.count === 0) {
-      res.status(400).json({ error: 'Verification code already used or expired.' });
-      return;
-    }
-
-    // Safely get public customer-facing update note from status history
-    const customerUpdateNote = serviceRequest.statusHistory
-      .slice()
-      .reverse()
-      .find((h: any) => h.note && !h.note.startsWith('Status updated to') && h.note !== 'Request submitted by customer')?.note || null;
 
     // Issue short-lived signed upload token if request is eligible for document upload
     const isUploadEligible = UPLOAD_ELIGIBLE_STATUSES.has(serviceRequest.status);
@@ -399,6 +357,7 @@ router.post('/track/verify-otp', otpVerifyLimiter, async (req: Request, res: Res
       );
     }
 
+    // Strictly minimized, customer-safe response payload
     res.json({
       success: true,
       message: 'Verification successful.',
@@ -407,24 +366,11 @@ router.post('/track/verify-otp', otpVerifyLimiter, async (req: Request, res: Res
         id: serviceRequest.id,
         requestId: serviceRequest.requestId,
         status: serviceRequest.status,
-        message: serviceRequest.message,
-        assessmentYear: serviceRequest.assessmentYear,
-        incomeType: serviceRequest.incomeType,
-        businessName: serviceRequest.businessName,
-        gstStatus: serviceRequest.gstStatus,
-        policyNumber: serviceRequest.policyNumber,
-        priority: serviceRequest.priority,
         createdAt: serviceRequest.createdAt,
-        updatedAt: serviceRequest.updatedAt,
         service: serviceRequest.service ? {
           name: serviceRequest.service.name,
-          category: serviceRequest.service.category,
         } : null,
-        customer: serviceRequest.customer ? {
-          name: serviceRequest.customer.name,
-        } : null,
-        panEncrypted: serviceRequest.panEncrypted ? maskPAN(decryptData(serviceRequest.panEncrypted)) : null,
-        adminNotes: customerUpdateNote,
+        adminNotes: null, // Strictly withhold internal notes; schema lacks a customer-approved message channel
       },
       documents: serviceRequest.documents.map((d: any) => ({
         id: d.id,
@@ -434,11 +380,6 @@ router.post('/track/verify-otp', otpVerifyLimiter, async (req: Request, res: Res
         fileSize: d.fileSize,
         status: d.status,
         createdAt: d.createdAt,
-      })),
-      timeline: serviceRequest.statusHistory.map((h: any) => ({
-        status: h.newStatus,
-        date: h.createdAt,
-        note: h.note,
       })),
     });
   } catch (error) {
