@@ -1,12 +1,25 @@
 import { Router, Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
 import prisma from '../config/database';
 import { config } from '../config';
 import { authenticateAdmin, AuthRequest } from '../middleware/auth';
+import { UPLOAD_ELIGIBLE_STATUSES } from '../middleware/upload';
 import { generateRequestId, maskPAN, encryptData, decryptData } from '../utils/helpers';
 
 const router = Router();
+
+// Stricter rate limit for public tracking checks to prevent phone/requestId enumeration
+export const trackingLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // max 30 attempts per IP per 15 minutes
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many tracking requests. Please try again after 15 minutes.' },
+});
 
 // POST /api/service-requests - Public: create a new service request
 router.post('/', async (req: Request, res: Response): Promise<void> => {
@@ -111,7 +124,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 // GET /api/service-requests/track - Public: track request status
-router.get('/track', async (req: Request, res: Response): Promise<void> => {
+router.get('/track', trackingLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const { requestId, phone } = req.query;
 
@@ -135,9 +148,6 @@ router.get('/track', async (req: Request, res: Response): Promise<void> => {
           orderBy: { createdAt: 'asc' },
           select: { newStatus: true, createdAt: true, note: true },
         },
-        notes: {
-          orderBy: { createdAt: 'desc' },
-        }
       },
     });
 
@@ -152,18 +162,65 @@ router.get('/track', async (req: Request, res: Response): Promise<void> => {
       .reverse()
       .find(h => h.note && !h.note.startsWith('Status updated to') && h.note !== 'Request submitted by customer')?.note || null;
 
+    // Issue short-lived signed upload token if request is eligible for document upload
+    const isUploadEligible = UPLOAD_ELIGIBLE_STATUSES.has(serviceRequest.status);
+    let uploadToken: string | null = null;
+
+    if (isUploadEligible) {
+      uploadToken = jwt.sign(
+        {
+          sub: serviceRequest.id,
+          requestId: serviceRequest.requestId,
+          purpose: 'customer_document_upload',
+          jti: crypto.randomUUID(),
+        },
+        config.jwt.secret,
+        {
+          algorithm: 'HS256',
+          expiresIn: '15m',
+        }
+      );
+    }
+
     res.json({
       request: {
-        ...serviceRequest,
+        id: serviceRequest.id,
+        requestId: serviceRequest.requestId,
+        status: serviceRequest.status,
+        message: serviceRequest.message,
+        assessmentYear: serviceRequest.assessmentYear,
+        incomeType: serviceRequest.incomeType,
+        businessName: serviceRequest.businessName,
+        gstStatus: serviceRequest.gstStatus,
+        policyNumber: serviceRequest.policyNumber,
+        priority: serviceRequest.priority,
+        createdAt: serviceRequest.createdAt,
+        updatedAt: serviceRequest.updatedAt,
+        service: serviceRequest.service ? {
+          name: serviceRequest.service.name,
+          category: serviceRequest.service.category,
+        } : null,
+        customer: serviceRequest.customer ? {
+          name: serviceRequest.customer.name,
+        } : null,
         panEncrypted: serviceRequest.panEncrypted ? maskPAN(decryptData(serviceRequest.panEncrypted)) : null,
         adminNotes: customerUpdateNote,
       },
-      documents: serviceRequest.documents,
+      documents: serviceRequest.documents.map((d: any) => ({
+        id: d.id,
+        documentType: d.documentType,
+        originalName: d.originalName,
+        mimeType: d.mimeType,
+        fileSize: d.fileSize,
+        status: d.status,
+        createdAt: d.createdAt,
+      })),
       timeline: serviceRequest.statusHistory.map(h => ({
         status: h.newStatus,
         date: h.createdAt,
         note: h.note,
       })),
+      uploadToken,
     });
   } catch (error) {
     console.error('Track request error:', error);

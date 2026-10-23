@@ -14,6 +14,7 @@ const TrackRequestPage = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [documentType, setDocumentType] = useState('Identity Proof');
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadToken, setUploadToken] = useState<string | null>(null);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,6 +25,7 @@ const TrackRequestPage = () => {
 
     setIsLoading(true);
     setRequestData(null);
+    setUploadToken(null);
     try {
       const cleanId = requestId.trim();
       const cleanPhone = phone.trim();
@@ -34,6 +36,9 @@ const TrackRequestPage = () => {
         res = await api.get(`/appointments/track?appointmentId=${cleanId}&phone=${cleanPhone}`);
       }
       setRequestData(res.data);
+      if (res.data?.uploadToken) {
+        setUploadToken(res.data.uploadToken);
+      }
       toast.success('Found');
     } catch (error: any) {
       console.error(error);
@@ -47,15 +52,23 @@ const TrackRequestPage = () => {
     e.preventDefault();
     if (!selectedFile || !requestData) return;
 
+    if (!uploadToken) {
+      toast.error('Upload session expired or unauthorized. Please track your request again to refresh.');
+      return;
+    }
+
     setIsUploading(true);
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('documentType', documentType);
 
     try {
-      // Upload using request ID
+      // Upload using request ID with signed authorization token
       await api.post(`/documents/upload/${requestData.request.id}`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          'X-Upload-Token': uploadToken,
+        },
       });
       
       toast.success('Document uploaded successfully');
@@ -63,8 +76,15 @@ const TrackRequestPage = () => {
       // Refresh request data to show new document
       const refreshRes = await api.get(`/service-requests/track?requestId=${requestId.trim()}&phone=${phone.trim()}`);
       setRequestData(refreshRes.data);
+      if (refreshRes.data?.uploadToken) {
+        setUploadToken(refreshRes.data.uploadToken);
+      }
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to upload document');
+      const errorMsg = error.response?.data?.error || 'Failed to upload document';
+      toast.error(errorMsg);
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        setUploadToken(null);
+      }
     } finally {
       setIsUploading(false);
     }
@@ -225,7 +245,7 @@ const TrackRequestPage = () => {
                       <li key={doc.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
                         <div className="flex items-center overflow-hidden">
                           <CheckCircle2 className="w-4 h-4 text-green-500 mr-2 shrink-0" />
-                          <span className="text-sm font-medium text-slate-700 truncate">{doc.name}</span>
+                          <span className="text-sm font-medium text-slate-700 truncate">{(doc as any).originalName || doc.name}</span>
                         </div>
                         <span className="text-xs text-slate-400 shrink-0 ml-2">
                           {new Date(doc.createdAt).toLocaleDateString()}

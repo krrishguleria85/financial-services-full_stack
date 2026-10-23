@@ -1,115 +1,179 @@
-import { Router, Request, Response } from 'express';
-import prisma from '../config/database';
-import { authenticateAdmin, AuthRequest } from '../middleware/auth';
-import { upload } from '../middleware/upload';
+import { Router, Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
 import path from 'path';
 import fs from 'fs';
+import prisma from '../config/database';
+import { authenticateAdmin, AuthRequest } from '../middleware/auth';
+import {
+  upload,
+  uploadSingleFile,
+  uploadLimiter,
+  validateFileMagicBytes,
+  isSignatureMatchingExtensionAndMime,
+  UPLOAD_ELIGIBLE_STATUSES,
+} from '../middleware/upload';
 import { config } from '../config';
 
 const router = Router();
 
-// POST /api/documents/upload/:serviceRequestId - Public: upload document for a specific request
-router.post('/upload/:serviceRequestId', upload.single('file'), async (req: Request, res: Response): Promise<void> => {
+export interface AuthorizedUploadRequest extends Request {
+  serviceRequest?: any;
+  uploadTokenClaims?: any;
+}
+
+// Helper to reliably clean up any uploaded temporary file if validation fails
+export function cleanupUploadedFile(req: Request): void {
+  const pendingPath = (req as any)._multerPendingFilePath;
+  if (pendingPath && fs.existsSync(pendingPath)) {
+    try {
+      fs.unlinkSync(pendingPath);
+    } catch {
+      // Ignore unlink errors
+    }
+  }
+  if (req.file?.path && fs.existsSync(req.file.path)) {
+    try {
+      fs.unlinkSync(req.file.path);
+    } catch {
+      // Ignore unlink errors
+    }
+  }
+}
+
+/**
+ * Pre-upload middleware: verifies upload authorization token and service request eligibility
+ * BEFORE Multer streams or writes any uploaded file bytes to disk.
+ */
+export const verifyUploadAuthorization = async (
+  req: AuthorizedUploadRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   try {
-    if (!req.file) {
-      res.status(400).json({ error: 'No file uploaded' });
+    // 1. Extract upload authorization token from header
+    const rawToken =
+      (req.headers['x-upload-token'] as string) ||
+      (req.headers.authorization?.startsWith('Bearer ')
+        ? req.headers.authorization.split(' ')[1]
+        : undefined);
+
+    if (!rawToken) {
+      res.status(401).json({ error: 'Upload authorization token is required' });
+      return;
+    }
+
+    // 2. Cryptographically verify the upload token (algorithm HS256 enforced)
+    let decoded: any;
+    try {
+      decoded = jwt.verify(rawToken, config.jwt.secret, { algorithms: ['HS256'] });
+    } catch (jwtErr: any) {
+      if (jwtErr.name === 'TokenExpiredError') {
+        res.status(401).json({ error: 'Upload session has expired. Please track your request again.' });
+        return;
+      }
+      res.status(401).json({ error: 'Invalid upload authorization token' });
+      return;
+    }
+
+    // 3. Verify token purpose and target service request binding
+    if (decoded.purpose !== 'customer_document_upload') {
+      res.status(403).json({ error: 'Invalid token purpose' });
       return;
     }
 
     const serviceRequestId = req.params.serviceRequestId as string;
-    const { documentType } = req.body;
-
-    if (!documentType) {
-      fs.unlinkSync(req.file.path);
-      res.status(400).json({ error: 'Document type is required' });
+    if (decoded.sub !== serviceRequestId) {
+      res.status(403).json({ error: 'Token is not authorized for this service request' });
       return;
     }
 
+    // 4. Load service request from DB & verify it exists and is eligible for uploads
     const serviceRequest = await prisma.serviceRequest.findUnique({
-      where: { id: serviceRequestId }
+      where: { id: serviceRequestId },
     });
 
     if (!serviceRequest) {
-      fs.unlinkSync(req.file.path);
       res.status(404).json({ error: 'Service request not found' });
       return;
     }
 
-    const document = await prisma.document.create({
-      data: {
-        customerId: serviceRequest.customerId,
-        serviceRequestId,
-        documentType,
-        originalName: req.file.originalname,
-        storedName: req.file.filename,
-        mimeType: req.file.mimetype,
-        fileSize: req.file.size,
-      },
-    });
-
-    if (serviceRequest.status === 'DOCUMENTS_REQUIRED' || serviceRequest.status === 'NEW') {
-      await prisma.serviceRequest.update({
-        where: { id: serviceRequestId },
-        data: { status: 'DOCUMENTS_RECEIVED' },
+    // Enforce explicit allowlist of statuses permitted to receive documents
+    if (!UPLOAD_ELIGIBLE_STATUSES.has(serviceRequest.status)) {
+      res.status(400).json({
+        error: `Service request in '${serviceRequest.status}' status cannot accept document uploads. Uploads are only accepted for active requests (NEW, DOCUMENTS_REQUIRED, DOCUMENTS_RECEIVED, UNDER_REVIEW, IN_PROGRESS).`,
       });
-      await prisma.requestStatusHistory.create({
+      return;
+    }
+
+    // Attach verified records to req for downstream Multer and route handler
+    req.serviceRequest = serviceRequest;
+    req.uploadTokenClaims = decoded;
+    next();
+  } catch (error) {
+    console.error('Verify upload authorization error:', error);
+    res.status(500).json({ error: 'Internal authorization error' });
+  }
+};
+
+// POST /api/documents/upload/:serviceRequestId - Upload document verified via pre-Multer token authorization
+router.post(
+  '/upload/:serviceRequestId',
+  uploadLimiter,
+  verifyUploadAuthorization, // Runs BEFORE Multer writes any file to disk!
+  uploadSingleFile('file'), // Wraps Multer and guarantees unlinking on LIMIT_FILE_SIZE or stream error!
+  async (req: AuthorizedUploadRequest, res: Response): Promise<void> => {
+    try {
+      const serviceRequest = req.serviceRequest;
+      const serviceRequestId = req.params.serviceRequestId as string;
+
+      // 1. Verify file payload
+      if (!req.file) {
+        res.status(400).json({ error: 'No file uploaded' });
+        return;
+      }
+
+      const { documentType } = req.body;
+      if (!documentType || typeof documentType !== 'string' || !documentType.trim()) {
+        cleanupUploadedFile(req);
+        res.status(400).json({ error: 'Document type is required' });
+        return;
+      }
+
+      // 2. Inspect binary file signature (magic bytes) on disk and ensure consistency with extension and MIME type
+      const magicValidation = validateFileMagicBytes(req.file.path);
+      if (!magicValidation.valid || !magicValidation.detected) {
+        cleanupUploadedFile(req);
+        res.status(400).json({ error: 'File signature verification failed: contents do not match allowed formats' });
+        return;
+      }
+
+      const ext = path.extname(req.file.originalname).toLowerCase();
+      if (!isSignatureMatchingExtensionAndMime(magicValidation.detected, ext, req.file.mimetype)) {
+        cleanupUploadedFile(req);
+        res.status(400).json({
+          error: `File signature mismatch: detected ${magicValidation.detected.toUpperCase()} contents do not match the declared extension (${ext}) or MIME type (${req.file.mimetype})`,
+        });
+        return;
+      }
+
+      // 3. Sanitize filename to prevent header injection or path traversal
+      const safeOriginalName = path.basename(req.file.originalname).replace(/[\r\n"']/g, '_');
+
+      // 4. Create document record - deriving customerId strictly from the database record
+      const document = await prisma.document.create({
         data: {
-          serviceRequestId,
-          oldStatus: serviceRequest.status,
-          newStatus: 'DOCUMENTS_RECEIVED',
-          note: `Document uploaded: ${documentType}`,
-          changedBy: 'system',
+          customerId: serviceRequest.customerId,
+          serviceRequestId: serviceRequest.id,
+          documentType: documentType.trim(),
+          originalName: safeOriginalName,
+          storedName: req.file.filename,
+          mimeType: req.file.mimetype,
+          fileSize: req.file.size,
         },
       });
-    }
 
-    res.status(201).json({ message: 'Document uploaded successfully', document });
-  } catch (error) {
-    console.error('Upload document error:', error);
-    res.status(500).json({ error: 'Failed to upload document' });
-  }
-});
-
-// POST /api/documents - Public: upload document
-router.post('/', upload.single('file'), async (req: Request, res: Response): Promise<void> => {
-  try {
-    if (!req.file) {
-      res.status(400).json({ error: 'No file uploaded' });
-      return;
-    }
-
-    const { customerId, serviceRequestId, documentType } = req.body;
-
-    if (!customerId || !documentType) {
-      // Clean up uploaded file
-      fs.unlinkSync(req.file.path);
-      res.status(400).json({ error: 'Customer ID and document type are required' });
-      return;
-    }
-
-    const customer = await prisma.customer.findUnique({ where: { id: customerId } });
-    if (!customer) {
-      fs.unlinkSync(req.file.path);
-      res.status(400).json({ error: 'Invalid customer' });
-      return;
-    }
-
-    const document = await prisma.document.create({
-      data: {
-        customerId,
-        serviceRequestId: serviceRequestId || null,
-        documentType,
-        originalName: req.file.originalname,
-        storedName: req.file.filename,
-        mimeType: req.file.mimetype,
-        fileSize: req.file.size,
-      },
-    });
-
-    // If linked to a service request, update status
-    if (serviceRequestId) {
-      const request = await prisma.serviceRequest.findUnique({ where: { id: serviceRequestId } });
-      if (request && request.status === 'DOCUMENTS_REQUIRED') {
+      // 5. Update request status if in NEW or DOCUMENTS_REQUIRED
+      if (serviceRequest.status === 'DOCUMENTS_REQUIRED' || serviceRequest.status === 'NEW') {
         await prisma.serviceRequest.update({
           where: { id: serviceRequestId },
           data: { status: 'DOCUMENTS_RECEIVED' },
@@ -117,103 +181,31 @@ router.post('/', upload.single('file'), async (req: Request, res: Response): Pro
         await prisma.requestStatusHistory.create({
           data: {
             serviceRequestId,
-            oldStatus: 'DOCUMENTS_REQUIRED',
+            oldStatus: serviceRequest.status,
             newStatus: 'DOCUMENTS_RECEIVED',
-            note: `Document uploaded: ${documentType}`,
-            changedBy: 'system',
+            note: `Document uploaded: ${documentType.trim()}`,
+            changedBy: 'customer',
           },
         });
       }
-    }
 
-    res.status(201).json({
-      message: 'Document uploaded successfully',
-      document: {
-        id: document.id,
-        documentType: document.documentType,
-        originalName: document.originalName,
-        status: document.status,
-      },
-    });
-  } catch (error) {
-    console.error('Upload document error:', error);
-    res.status(500).json({ error: 'Failed to upload document' });
-  }
-});
-
-// POST /api/documents/upload-with-request - Public: upload with phone+requestId verification
-router.post('/upload-with-request', upload.single('file'), async (req: Request, res: Response): Promise<void> => {
-  try {
-    if (!req.file) {
-      res.status(400).json({ error: 'No file uploaded' });
-      return;
-    }
-
-    const { requestId, phone, documentType } = req.body;
-
-    if (!requestId || !phone || !documentType) {
-      fs.unlinkSync(req.file.path);
-      res.status(400).json({ error: 'Request ID, phone, and document type are required' });
-      return;
-    }
-
-    const cleanPhone = phone.replace(/[\s\-+]/g, '').replace(/^91/, '');
-
-    const serviceRequest = await prisma.serviceRequest.findFirst({
-      where: {
-        requestId,
-        customer: { phone: cleanPhone },
-      },
-    });
-
-    if (!serviceRequest) {
-      fs.unlinkSync(req.file.path);
-      res.status(404).json({ error: 'No request found. Check your Request ID and phone number.' });
-      return;
-    }
-
-    const document = await prisma.document.create({
-      data: {
-        customerId: serviceRequest.customerId,
-        serviceRequestId: serviceRequest.id,
-        documentType,
-        originalName: req.file.originalname,
-        storedName: req.file.filename,
-        mimeType: req.file.mimetype,
-        fileSize: req.file.size,
-      },
-    });
-
-    // Update request status if needed
-    if (serviceRequest.status === 'DOCUMENTS_REQUIRED' || serviceRequest.status === 'NEW') {
-      await prisma.serviceRequest.update({
-        where: { id: serviceRequest.id },
-        data: { status: 'DOCUMENTS_RECEIVED' },
-      });
-      await prisma.requestStatusHistory.create({
-        data: {
-          serviceRequestId: serviceRequest.id,
-          oldStatus: serviceRequest.status,
-          newStatus: 'DOCUMENTS_RECEIVED',
-          note: `Document uploaded: ${documentType}`,
-          changedBy: 'system',
+      res.status(201).json({
+        message: 'Document uploaded successfully',
+        document: {
+          id: document.id,
+          documentType: document.documentType,
+          originalName: document.originalName,
+          status: document.status,
+          createdAt: document.createdAt,
         },
       });
+    } catch (error) {
+      cleanupUploadedFile(req);
+      console.error('Upload document error:', error);
+      res.status(500).json({ error: 'Failed to upload document' });
     }
-
-    res.status(201).json({
-      message: 'Document uploaded successfully',
-      document: {
-        id: document.id,
-        documentType: document.documentType,
-        originalName: document.originalName,
-      },
-    });
-  } catch (error) {
-    console.error('Upload document error:', error);
-    res.status(500).json({ error: 'Failed to upload document' });
   }
-});
+);
 
 // GET /api/documents/:id/download - Admin: download document
 router.get('/:id/download', authenticateAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
@@ -230,7 +222,8 @@ router.get('/:id/download', authenticateAdmin, async (req: AuthRequest, res: Res
       return;
     }
 
-    res.download(filePath, document.originalName);
+    const safeDownloadName = path.basename(document.originalName).replace(/[\r\n"']/g, '_');
+    res.download(filePath, safeDownloadName);
   } catch (error) {
     console.error('Download document error:', error);
     res.status(500).json({ error: 'Failed to download document' });

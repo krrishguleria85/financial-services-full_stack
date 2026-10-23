@@ -10,10 +10,10 @@ export interface Service {
 }
 
 export interface Customer {
-  id: string;
+  id?: string;
   name: string;
   email?: string;
-  phone: string;
+  phone?: string;
   address?: string;
   city?: string;
   state?: string;
@@ -23,8 +23,8 @@ export interface Customer {
 export interface ServiceRequest {
   id: string;
   requestId: string;
-  customerId: string;
-  serviceId: string;
+  customerId?: string;
+  serviceId?: string;
   status: string;
   message?: string;
   createdAt: string;
