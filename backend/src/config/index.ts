@@ -11,6 +11,7 @@ export const INSECURE_SECRET_PLACEHOLDERS = new Set([
   'change-this-to-a-secure-random-string-in-production',
   'dev-secret-change-in-production',
   'financial-services-secure-encryption-key-32',
+  're_placeholder_api_key',
 ]);
 
 /**
@@ -26,7 +27,7 @@ export function validateAndGetJwtSecret(envSecret?: string | null, isProd = isPr
     if (isProd) {
       throw new Error('FATAL: JWT_SECRET environment variable is missing or empty in production.');
     }
-    return '';
+    throw new Error('FATAL: JWT_SECRET environment variable is missing or empty.');
   }
   if (isProd) {
     if (INSECURE_SECRET_PLACEHOLDERS.has(secret)) {
@@ -70,8 +71,101 @@ export function validateAndGetEncryptionKey(
   return rawKey.padEnd(32, '0').slice(0, 32);
 }
 
+/**
+ * Validates and retrieves the Resend API configuration.
+ * In production, fails fast if RESEND_API_KEY is missing, empty, or an insecure placeholder.
+ */
+export function validateAndGetResendConfig(
+  envApiKey?: string | null,
+  envFromEmail?: string | null,
+  isProd = isProduction
+): { apiKey: string; fromEmail: string } {
+  const apiKey = envApiKey !== undefined
+    ? (envApiKey === null ? '' : envApiKey.trim())
+    : (process.env.RESEND_API_KEY || '').trim();
+
+  const fromEmail = envFromEmail !== undefined
+    ? (envFromEmail === null ? 'onboarding@resend.dev' : envFromEmail.trim() || 'onboarding@resend.dev')
+    : (process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev').trim();
+
+  if (isProd) {
+    if (!apiKey) {
+      throw new Error('FATAL: RESEND_API_KEY environment variable is missing or empty in production.');
+    }
+    if (INSECURE_SECRET_PLACEHOLDERS.has(apiKey) || apiKey.startsWith('re_placeholder')) {
+      throw new Error('FATAL: RESEND_API_KEY is set to an insecure default placeholder value in production.');
+    }
+  }
+
+  return { apiKey, fromEmail };
+}
+
+export interface R2Config {
+  accountId: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucketName: string;
+  endpoint: string;
+  isConfigured: boolean;
+}
+
+/**
+ * Validates and retrieves Cloudflare R2 storage configuration.
+ * In production, fails fast if R2 is partially configured or contains placeholder values.
+ */
+export function validateAndGetR2Config(
+  envAccountId?: string | null,
+  envAccessKeyId?: string | null,
+  envSecretAccessKey?: string | null,
+  envBucketName?: string | null,
+  envEndpoint?: string | null,
+  isProd = isProduction
+): R2Config {
+  const accountId = (envAccountId !== undefined ? (envAccountId || '') : (process.env.R2_ACCOUNT_ID || '')).trim();
+  const accessKeyId = (envAccessKeyId !== undefined ? (envAccessKeyId || '') : (process.env.R2_ACCESS_KEY_ID || '')).trim();
+  const secretAccessKey = (envSecretAccessKey !== undefined ? (envSecretAccessKey || '') : (process.env.R2_SECRET_ACCESS_KEY || '')).trim();
+  const bucketName = (envBucketName !== undefined ? (envBucketName || 'financial-services-private-docs') : (process.env.R2_BUCKET_NAME || 'financial-services-private-docs')).trim();
+
+  const isConfigured = Boolean(
+    accountId &&
+    accessKeyId &&
+    secretAccessKey &&
+    bucketName &&
+    !INSECURE_SECRET_PLACEHOLDERS.has(accountId) &&
+    !INSECURE_SECRET_PLACEHOLDERS.has(accessKeyId) &&
+    !INSECURE_SECRET_PLACEHOLDERS.has(secretAccessKey) &&
+    !accessKeyId.startsWith('your_') &&
+    !secretAccessKey.startsWith('your_')
+  );
+
+  let endpoint = (envEndpoint !== undefined ? (envEndpoint || '') : (process.env.R2_ENDPOINT || '')).trim();
+  if (!endpoint && accountId) {
+    endpoint = `https://${accountId}.r2.cloudflarestorage.com`;
+  }
+
+  if (isProd) {
+    if (!accountId || !accessKeyId || !secretAccessKey) {
+      throw new Error('FATAL: Cloudflare R2 configuration is missing in production. R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY must be provided.');
+    }
+    if (!isConfigured) {
+      throw new Error('FATAL: Cloudflare R2 credentials are invalid or contain default placeholders in production.');
+    }
+  }
+
+  return {
+    accountId,
+    accessKeyId,
+    secretAccessKey,
+    bucketName,
+    endpoint,
+    isConfigured,
+  };
+}
+
 const jwtSecret = validateAndGetJwtSecret();
 const encryptionKey = validateAndGetEncryptionKey(process.env.ENCRYPTION_KEY, jwtSecret);
+const resendConfig = validateAndGetResendConfig();
+const r2Config = validateAndGetR2Config();
 
 export const config = {
   port: parseInt(process.env.PORT || '5000', 10),
@@ -88,6 +182,10 @@ export const config = {
   },
 
   encryptionKey,
+
+  resend: resendConfig,
+
+  r2: r2Config,
 
   upload: {
     maxFileSizeMB: parseInt(process.env.MAX_FILE_SIZE_MB || '10', 10),

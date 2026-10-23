@@ -112,8 +112,25 @@ app.get('/', (_req, res) => {
 });
 
 // Global error handler
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled error:', err);
+
+  // Clean up any temporary or pending partial file on disk if an error occurred during request handling or Multer
+  const pendingFile = (req as any)._multerPendingFilePath;
+  if (pendingFile && fs.existsSync(pendingFile)) {
+    try {
+      fs.unlinkSync(pendingFile);
+    } catch {
+      // Ignore cleanup error
+    }
+  }
+  if ((req as any).file?.path && fs.existsSync((req as any).file.path)) {
+    try {
+      fs.unlinkSync((req as any).file.path);
+    } catch {
+      // Ignore cleanup error
+    }
+  }
 
   if (err.code === 'LIMIT_FILE_SIZE') {
     res.status(400).json({ error: `File size exceeds the allowed limit of ${config.upload.maxFileSizeMB}MB` });
@@ -125,7 +142,12 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
     return;
   }
 
-  if (err.message?.includes('Invalid file type')) {
+  if (
+    err.message?.includes('Invalid file type') ||
+    err.message?.includes('Invalid file extension') ||
+    err.message?.includes('Invalid MIME type') ||
+    err.message?.includes('does not match file extension')
+  ) {
     res.status(400).json({ error: err.message });
     return;
   }

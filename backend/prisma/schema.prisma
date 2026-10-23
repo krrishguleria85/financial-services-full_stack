@@ -93,6 +93,7 @@ model ServiceRequest {
   policyNumber   String?
   
   priority       String   @default("normal") // low, normal, high, urgent
+  confirmationEmailSent Boolean @default(false)
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -102,6 +103,28 @@ model ServiceRequest {
   documents      Document[]
   statusHistory  RequestStatusHistory[]
   notes          AdminNote[]
+  otps           EmailOtp[]
+}
+
+// ============================================
+// Email OTP Verification
+// ============================================
+model EmailOtp {
+  id               String    @id @default(uuid())
+  serviceRequestId String
+  email            String
+  codeHash         String
+  salt             String
+  attempts         Int       @default(0)
+  maxAttempts      Int       @default(5)
+  expiresAt        DateTime
+  consumedAt       DateTime?
+  createdAt        DateTime  @default(now())
+
+  serviceRequest   ServiceRequest @relation(fields: [serviceRequestId], references: [id], onDelete: Cascade)
+
+  @@index([serviceRequestId, expiresAt])
+  @@index([serviceRequestId, consumedAt])
 }
 
 // ============================================
