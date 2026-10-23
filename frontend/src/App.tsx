@@ -25,15 +25,12 @@ import ContentPage from './pages/admin/ContentPage';
 import CustomersPage from './pages/admin/CustomersPage';
 import ServicesManagementPage from './pages/admin/ServicesManagementPage';
 import SettingsPage from './pages/admin/SettingsPage';
-import EnquiriesPage from './pages/admin/EnquiriesPage';
-import AdminDeadlinesPage from './pages/admin/AdminDeadlinesPage';
-import BlogManagementPage from './pages/admin/BlogManagementPage';
 
 function App() {
   return (
     <BrowserRouter>
       <Toaster position="top-center" />
-      
+
       <Routes>
         {/* Public Routes */}
         <Route path="/" element={<MainLayout />}>
@@ -49,7 +46,7 @@ function App() {
 
         {/* Admin Routes */}
         <Route path="/admin/login" element={<AdminLogin />} />
-        
+
         <Route path="/admin" element={<ProtectedRoute />}>
           <Route element={<AdminLayout />}>
             <Route index element={<Navigate to="dashboard" replace />} />
@@ -58,10 +55,7 @@ function App() {
             <Route path="appointments" element={<AppointmentsPage />} />
             <Route path="customers" element={<CustomersPage />} />
             <Route path="services" element={<ServicesManagementPage />} />
-            <Route path="deadlines" element={<AdminDeadlinesPage />} />
             <Route path="content" element={<ContentPage />} />
-            <Route path="blog" element={<BlogManagementPage />} />
-            <Route path="enquiries" element={<EnquiriesPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Route>
