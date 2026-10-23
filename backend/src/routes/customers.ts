@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import prisma from '../config/database';
 import { authenticateAdmin, AuthRequest } from '../middleware/auth';
+import { deleteDocumentFile } from '../services/storageService';
 
 const router = Router();
 
@@ -138,14 +139,23 @@ router.delete('/:id', authenticateAdmin, async (req: AuthRequest, res: Response)
   try {
     const customerId = req.params.id as string;
 
-    // 1. Find all service requests so we can delete their child history records
+    // 1. Clean up physical document files from Cloudflare R2 and/or local disk
+    const customerDocs = await prisma.document.findMany({
+      where: { customerId },
+      select: { storedName: true },
+    });
+    for (const doc of customerDocs) {
+      await deleteDocumentFile(doc.storedName);
+    }
+
+    // 2. Find all service requests so we can delete their child history records
     const serviceRequests = await prisma.serviceRequest.findMany({
       where: { customerId },
       select: { id: true }
     });
     const requestIds = serviceRequests.map((sr: any) => sr.id);
 
-    // 2. Safely delete everything in a transaction so we don't get foreign key errors
+    // 3. Safely delete everything in a transaction so we don't get foreign key errors
     await prisma.$transaction([
       prisma.requestStatusHistory.deleteMany({ where: { serviceRequestId: { in: requestIds } } }),
       prisma.adminNote.deleteMany({ where: { customerId } }),

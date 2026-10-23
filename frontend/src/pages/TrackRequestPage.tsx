@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Search, FileText, CheckCircle2, Clock, Upload, ArrowRight, ShieldCheck, XCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Search, FileText, CheckCircle2, Clock, Upload, ArrowRight, ShieldCheck, XCircle, Mail, KeyRound, RotateCcw, ArrowLeft } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import api from '../lib/api';
 import type { ServiceRequest, Document } from '../types';
@@ -10,11 +10,26 @@ const TrackRequestPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [requestData, setRequestData] = useState<{ request: ServiceRequest, documents: Document[] } | null>(null);
 
+  // OTP Verification State
+  const [step, setStep] = useState<'search' | 'otp' | 'details'>('search');
+  const [otp, setOtp] = useState('');
+  const [cooldown, setCooldown] = useState(0);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+
   // File Upload State
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [documentType, setDocumentType] = useState('Identity Proof');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadToken, setUploadToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const interval = setInterval(() => {
+      setCooldown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cooldown]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,17 +44,27 @@ const TrackRequestPage = () => {
     try {
       const cleanId = requestId.trim();
       const cleanPhone = phone.trim();
-      let res;
+
       if (cleanId.toUpperCase().startsWith('REQ-')) {
-        res = await api.get(`/service-requests/track?requestId=${cleanId.toUpperCase()}&phone=${cleanPhone}`);
+        // Service requests require email OTP verification for private tracking & uploads
+        const res = await api.post('/service-requests/track/request-otp', {
+          requestId: cleanId.toUpperCase(),
+          phone: cleanPhone,
+        });
+
+        setCooldown(60);
+        setStep('otp');
+        toast.success(res.data.message || 'Verification code sent to registered email');
       } else {
-        res = await api.get(`/appointments/track?appointmentId=${cleanId}&phone=${cleanPhone}`);
+        // Appointments tracking
+        const res = await api.get(`/appointments/track?appointmentId=${cleanId}&phone=${cleanPhone}`);
+        setRequestData(res.data);
+        if (res.data?.uploadToken) {
+          setUploadToken(res.data.uploadToken);
+        }
+        setStep('details');
+        toast.success('Found');
       }
-      setRequestData(res.data);
-      if (res.data?.uploadToken) {
-        setUploadToken(res.data.uploadToken);
-      }
-      toast.success('Found');
     } catch (error: any) {
       console.error(error);
       toast.error(error.response?.data?.error || 'Failed to find tracking information. Please check your details.');
@@ -48,12 +73,62 @@ const TrackRequestPage = () => {
     }
   };
 
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanOtp = otp.trim();
+    if (!cleanOtp || cleanOtp.length !== 6) {
+      toast.error('Please enter a valid 6-digit verification code');
+      return;
+    }
+
+    setIsVerifying(true);
+    try {
+      const res = await api.post('/service-requests/track/verify-otp', {
+        requestId: requestId.trim().toUpperCase(),
+        phone: phone.trim(),
+        otp: cleanOtp,
+      });
+
+      setRequestData(res.data);
+      if (res.data?.uploadToken) {
+        setUploadToken(res.data.uploadToken);
+      }
+      setStep('details');
+      toast.success('Verification successful!');
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.response?.data?.error || 'Verification failed. Please check your code.');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (cooldown > 0 || isResending) return;
+
+    setIsResending(true);
+    try {
+      await api.post('/service-requests/track/resend-otp', {
+        requestId: requestId.trim().toUpperCase(),
+        phone: phone.trim(),
+      });
+
+      setCooldown(60);
+      toast.success('New verification code sent to your email.');
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.response?.data?.error || 'Failed to resend code. Please try again.');
+    } finally {
+      setIsResending(false);
+    }
+  };
+
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedFile || !requestData) return;
 
     if (!uploadToken) {
-      toast.error('Upload session expired or unauthorized. Please track your request again to refresh.');
+      toast.error('Upload session expired or unauthorized. Please track your request again or refresh.');
       return;
     }
 
@@ -64,20 +139,21 @@ const TrackRequestPage = () => {
 
     try {
       // Upload using request ID with signed authorization token
-      await api.post(`/documents/upload/${requestData.request.id}`, formData, {
+      const uploadRes = await api.post(`/documents/upload/${requestData.request.id}`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
           'X-Upload-Token': uploadToken,
         },
       });
-      
+
       toast.success('Document uploaded successfully');
       setSelectedFile(null);
-      // Refresh request data to show new document
-      const refreshRes = await api.get(`/service-requests/track?requestId=${requestId.trim()}&phone=${phone.trim()}`);
-      setRequestData(refreshRes.data);
-      if (refreshRes.data?.uploadToken) {
-        setUploadToken(refreshRes.data.uploadToken);
+      // Append newly uploaded document to local request state
+      if (uploadRes.data?.document) {
+        setRequestData((prev: any) => prev ? {
+          ...prev,
+          documents: [...(prev.documents || []), uploadRes.data.document],
+        } : prev);
       }
     } catch (error: any) {
       const errorMsg = error.response?.data?.error || 'Failed to upload document';
@@ -128,38 +204,107 @@ const TrackRequestPage = () => {
         </p>
       </div>
 
-      <div className="max-w-xl mx-auto mb-12 print:hidden">
-        <form onSubmit={handleSearch} className="card p-6 bg-white shadow-lg space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Tracking ID</label>
-            <input 
-              type="text" 
-              value={requestId} 
-              onChange={(e) => setRequestId(e.target.value)} 
-              className="input-field" 
-              placeholder="e.g., REQ-1234abcd or Appointment ID" 
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Registered Phone Number</label>
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500">+91</span>
-              <input 
-                type="tel" 
-                value={phone} 
-                onChange={(e) => setPhone(e.target.value)} 
-                className="input-field pl-12" 
-                placeholder="9876543210" 
+      {step !== 'otp' && (
+        <div className="max-w-xl mx-auto mb-12 print:hidden">
+          <form onSubmit={handleSearch} className="card p-6 bg-white shadow-lg space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Tracking ID</label>
+              <input
+                type="text"
+                value={requestId}
+                onChange={(e) => setRequestId(e.target.value)}
+                className="input-field"
+                placeholder="e.g., REQ-1234abcd or Appointment ID"
                 required
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Registered Phone Number</label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500">+91</span>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="input-field pl-12"
+                  placeholder="9876543210"
+                  required
+                />
+              </div>
+            </div>
+            <button type="submit" disabled={isLoading} className="btn btn-primary w-full flex items-center justify-center">
+              {isLoading ? 'Sending Verification Code...' : <><Search className="w-5 h-5 mr-2" /> Track Status</>}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {step === 'otp' && (
+        <div className="max-w-md mx-auto mb-12 print:hidden">
+          <div className="card p-8 bg-white shadow-xl border-t-4 border-primary-600 space-y-6">
+            <div className="text-center">
+              <div className="w-14 h-14 bg-primary-50 text-primary-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Mail className="w-7 h-7" />
+              </div>
+              <h2 className="text-2xl font-bold text-slate-900">Email Verification</h2>
+              <p className="text-sm text-slate-600 mt-2">
+                For security, we sent a 6-digit verification code to your registered email:
+              </p>
+              <p className="text-base font-semibold text-primary-700 mt-1 font-mono">
+                your registered email address
+              </p>
+            </div>
+
+            <form onSubmit={handleVerifyOtp} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1 text-center">
+                  Enter 6-Digit Code
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="\d{6}"
+                  maxLength={6}
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                  className="input-field text-center text-3xl font-mono tracking-widest py-3 font-bold text-slate-900"
+                  placeholder="123456"
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isVerifying || otp.length !== 6}
+                className="btn btn-primary w-full flex items-center justify-center py-3 text-base"
+              >
+                {isVerifying ? 'Verifying...' : <><KeyRound className="w-5 h-5 mr-2" /> Verify &amp; View Request</>}
+              </button>
+            </form>
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-sm">
+              <button
+                type="button"
+                onClick={() => { setStep('search'); setOtp(''); }}
+                className="text-slate-500 hover:text-slate-800 flex items-center"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" /> Change Details
+              </button>
+
+              <button
+                type="button"
+                onClick={handleResendOtp}
+                disabled={cooldown > 0 || isResending}
+                className={`flex items-center font-medium ${cooldown > 0 ? 'text-slate-400 cursor-not-allowed' : 'text-primary-600 hover:text-primary-800'}`}
+              >
+                <RotateCcw className="w-4 h-4 mr-1" />
+                {cooldown > 0 ? `Resend in ${cooldown}s` : (isResending ? 'Sending...' : 'Resend Code')}
+              </button>
+            </div>
           </div>
-          <button type="submit" disabled={isLoading} className="btn btn-primary w-full flex items-center justify-center">
-            {isLoading ? 'Searching...' : <><Search className="w-5 h-5 mr-2" /> Track Status</>}
-          </button>
-        </form>
-      </div>
+        </div>
+      )}
 
       {requestData && (
         <div className="max-w-4xl mx-auto grid md:grid-cols-2 gap-8">
@@ -168,10 +313,10 @@ const TrackRequestPage = () => {
           <div className={`card p-6 bg-white shadow-lg border-t-4 border-primary-500 ${!requestData.request.requestId ? 'md:col-span-2 max-w-2xl mx-auto w-full' : ''} print:shadow-none print:border-none print:p-0`}>
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-slate-900 flex items-center">
-                <FileText className="w-5 h-5 mr-2 text-primary-600 print:hidden" /> 
+                <FileText className="w-5 h-5 mr-2 text-primary-600 print:hidden" />
                 <span className="print:text-2xl">Request Details</span>
               </h2>
-              <button 
+              <button
                 onClick={() => window.print()}
                 className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors print:hidden"
               >
@@ -179,13 +324,13 @@ const TrackRequestPage = () => {
                 Download Receipt
               </button>
             </div>
-            
+
             <div className="space-y-4">
               <div className="flex justify-between items-center pb-4 border-b border-slate-100">
                 <span className="text-slate-500">Status</span>
                 {getStatusBadge(requestData.request.status)}
               </div>
-              
+
               <div className="pb-4 border-b border-slate-100">
                 <span className="text-slate-500 block text-sm mb-1">Service Requested</span>
                 <span className="font-semibold text-slate-900">
@@ -193,12 +338,12 @@ const TrackRequestPage = () => {
                   {requestData.request.service?.name || 'Service'}
                 </span>
               </div>
-              
+
               <div className="pb-4 border-b border-slate-100">
                 <span className="text-slate-500 block text-sm mb-1">Date Submitted</span>
                 <span className="text-slate-900">{new Date(requestData.request.createdAt).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
               </div>
-              
+
               {/* @ts-ignore */}
               {requestData.request.date && requestData.request.time && (
                 <div className="pb-4 border-b border-slate-100 grid grid-cols-2 gap-4">
@@ -214,7 +359,7 @@ const TrackRequestPage = () => {
                   </div>
                 </div>
               )}
-              
+
               {requestData.request.adminNotes && (
                 <div className="bg-primary-50 p-4 rounded-lg">
                   <span className="text-primary-800 block text-sm font-semibold mb-1">Message from Admin:</span>
@@ -231,11 +376,11 @@ const TrackRequestPage = () => {
               <h2 className="text-xl font-bold text-slate-900 flex items-center mb-4">
                 <ShieldCheck className="w-5 h-5 mr-2 text-primary-600" /> Documents
               </h2>
-              
+
               {requestData.documents.length === 0 && requestData.request.status === 'COMPLETED' && (
-                 <p className="text-sm text-slate-500">No documents available.</p>
+                <p className="text-sm text-slate-500">No documents available.</p>
               )}
-              
+
               {/* Uploaded Documents List */}
               {requestData.documents.length > 0 && (
                 <div className="mb-6">
@@ -262,8 +407,8 @@ const TrackRequestPage = () => {
                   <h3 className="text-sm font-semibold text-slate-700 mb-2 uppercase tracking-wider">Upload New Document</h3>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Document Type</label>
-                    <select 
-                      value={documentType} 
+                    <select
+                      value={documentType}
                       onChange={(e) => setDocumentType(e.target.value)}
                       className="input-field"
                     >
@@ -276,11 +421,11 @@ const TrackRequestPage = () => {
                       <option value="Other">Other</option>
                     </select>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Select File (PDF, JPG, PNG)</label>
-                    <input 
-                      type="file" 
+                    <input
+                      type="file"
                       accept=".pdf,.jpg,.jpeg,.png"
                       onChange={(e) => setSelectedFile(e.target.files ? e.target.files[0] : null)}
                       className="block w-full text-sm text-slate-500
@@ -293,10 +438,10 @@ const TrackRequestPage = () => {
                       required
                     />
                   </div>
-                  
-                  <button 
-                    type="submit" 
-                    disabled={!selectedFile || isUploading} 
+
+                  <button
+                    type="submit"
+                    disabled={!selectedFile || isUploading}
                     className="btn btn-secondary w-full flex items-center justify-center"
                   >
                     {isUploading ? 'Uploading...' : <><Upload className="w-4 h-4 mr-2" /> Upload Document</>}

@@ -243,17 +243,20 @@ test('Document Upload Security & File Validation Suite', async (t) => {
     );
   }
 
-  await t.test('1. Tracking issuance of short-lived uploadToken and data sanitization', async () => {
+  await t.test('1. Legacy GET /track is disabled (HTTP 403) and cannot bypass OTP to issue uploadToken', async () => {
     const res = await fetch(`${baseUrl}/api/service-requests/track?requestId=REQ-STATUS-02&phone=9876543001`, {
       headers: { 'X-Forwarded-For': getNextIp() },
     });
-    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.status, 403);
     const body: any = await res.json();
 
-    assert.ok(body.uploadToken, 'uploadToken must be returned for upload-eligible requests');
-    assert.strictEqual(body.request.notes, undefined, 'Internal notes must NOT be leaked to public tracking');
+    assert.strictEqual(body.uploadToken, undefined, 'Legacy GET /track must NOT issue uploadToken');
+    assert.strictEqual(body.request, undefined, 'Legacy GET /track must NOT return request details');
+    assert.ok(body.error.includes('Direct tracking without email OTP verification is disabled'));
 
-    const decoded = jwt.verify(body.uploadToken, config.jwt.secret, { algorithms: ['HS256'] }) as any;
+    // Verify valid signed token structure for upload authorization
+    const token = makeValidToken('req-status-docs-required', 'REQ-STATUS-02');
+    const decoded = jwt.verify(token, config.jwt.secret, { algorithms: ['HS256'] }) as any;
     assert.strictEqual(decoded.sub, 'req-status-docs-required');
     assert.strictEqual(decoded.requestId, 'REQ-STATUS-02');
     assert.strictEqual(decoded.purpose, 'customer_document_upload');
@@ -795,7 +798,7 @@ test('Document Upload Security & File Validation Suite', async (t) => {
     assert.strictEqual(resUploadWithReq.status, 404);
   });
 
-  await t.test('20. Public tracking endpoint sanitizes customer PII, PAN, internal notes, and stored filenames', async () => {
+  await t.test('20. Legacy GET /track route unconditionally denies access (HTTP 403) for any request ID or phone', async () => {
     const res = await fetch(`${baseUrl}/api/service-requests/track?requestId=REQ-STATUS-02&phone=9876543001`, {
       method: 'GET',
       headers: {
@@ -803,45 +806,14 @@ test('Document Upload Security & File Validation Suite', async (t) => {
       },
     });
 
-    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.status, 403);
     const body: any = await res.json();
-
-    // 1. Legitimate tracking & upload fields are present
-    assert.ok(body.uploadToken, 'Upload token must be issued for DOCUMENTS_RECEIVED');
-    assert.strictEqual(body.request.id, 'req-status-docs-required');
-    assert.strictEqual(body.request.requestId, 'REQ-STATUS-02');
-    assert.strictEqual(body.request.status, 'DOCUMENTS_RECEIVED');
-    assert.strictEqual(body.request.service?.name, 'Tax Consultation');
-
-    // 2. Customer field contains ONLY name
-    assert.ok(body.request.customer, 'Customer object must exist');
-    assert.strictEqual(body.request.customer.name, 'Test Security Customer');
-    assert.strictEqual(body.request.customer.email, undefined, 'Customer email must not be exposed');
-    assert.strictEqual(body.request.customer.phone, undefined, 'Customer phone must not be exposed');
-    assert.strictEqual(body.request.customer.address, undefined, 'Customer address must not be exposed');
-    assert.strictEqual(body.request.customer.city, undefined, 'Customer city must not be exposed');
-    assert.strictEqual(body.request.customer.state, undefined, 'Customer state must not be exposed');
-    assert.strictEqual(body.request.customer.pincode, undefined, 'Customer pincode must not be exposed');
-    assert.strictEqual(body.request.customer.id, undefined, 'Customer DB ID must not be exposed');
-    assert.strictEqual(body.request.customerId, undefined, 'Customer ID reference must not be exposed');
-
-    // 3. Sensitive financial identifiers are masked
-    assert.strictEqual(body.request.panEncrypted, 'AB****4F', 'PAN must be masked and never returned in plaintext');
-
-    // 4. Internal notes and raw form data are excluded
-    assert.strictEqual(body.request.notes, undefined, 'Internal notes table must not be exposed');
-    assert.strictEqual(body.request.formData, undefined, 'Raw form JSON must not be exposed');
-    assert.strictEqual(body.request.adminNotes, 'Please upload identity proof', 'Only public customer update note should appear');
-
-    // 5. Documents list excludes internal server-side stored filenames
-    assert.ok(Array.isArray(body.documents) && body.documents.length > 0);
-    for (const doc of body.documents) {
-      assert.strictEqual(doc.storedName, undefined, 'Internal stored file path/name must not be exposed in tracking response');
-      assert.ok(doc.originalName, 'Original filename for display must be present');
-    }
+    assert.ok(body.error.includes('Direct tracking without email OTP verification is disabled'));
+    assert.strictEqual(body.uploadToken, undefined, 'No uploadToken issued by disabled GET /track');
+    assert.strictEqual(body.request, undefined, 'No request details leaked by disabled GET /track');
   });
 
-  await t.test('21. Public tracking with invalid phone or request ID returns HTTP 404 without leaking data', async () => {
+  await t.test('21. Legacy GET /track route rejects invalid parameters with HTTP 403 without leaking data', async () => {
     // Valid requestId, wrong phone
     const resWrongPhone = await fetch(`${baseUrl}/api/service-requests/track?requestId=REQ-STATUS-02&phone=9999999999`, {
       method: 'GET',
@@ -849,9 +821,9 @@ test('Document Upload Security & File Validation Suite', async (t) => {
         'X-Forwarded-For': getNextIp(),
       },
     });
-    assert.strictEqual(resWrongPhone.status, 404);
+    assert.strictEqual(resWrongPhone.status, 403);
     const bodyPhone: any = await resWrongPhone.json();
-    assert.ok(bodyPhone.error.includes('No request found'));
+    assert.ok(bodyPhone.error.includes('Direct tracking without email OTP verification is disabled'));
 
     // Nonexistent requestId
     const resWrongId = await fetch(`${baseUrl}/api/service-requests/track?requestId=REQ-NONEXISTENT&phone=9876543001`, {
@@ -860,34 +832,23 @@ test('Document Upload Security & File Validation Suite', async (t) => {
         'X-Forwarded-For': getNextIp(),
       },
     });
-    assert.strictEqual(resWrongId.status, 404);
+    assert.strictEqual(resWrongId.status, 403);
     const bodyId: any = await resWrongId.json();
-    assert.ok(bodyId.error.includes('No request found'));
+    assert.ok(bodyId.error.includes('Direct tracking without email OTP verification is disabled'));
   });
 
-  await t.test('22. Public tracking rate limiter (trackingLimiter) restricts excessive attempts (>30) to HTTP 429', async () => {
+  await t.test('22. Direct tracking route GET /track cannot bypass OTP verification even under repeated calls', async () => {
     const probeIp = '198.51.100.88';
 
-    for (let i = 0; i < 30; i++) {
-      await fetch(`${baseUrl}/api/service-requests/track?requestId=REQ-STATUS-01&phone=9876543001`, {
+    for (let i = 0; i < 5; i++) {
+      const res = await fetch(`${baseUrl}/api/service-requests/track?requestId=REQ-STATUS-01&phone=9876543001`, {
         method: 'GET',
         headers: {
           'X-Forwarded-For': probeIp,
         },
       });
+      assert.strictEqual(res.status, 403);
     }
-
-    // 31st request from same IP
-    const res = await fetch(`${baseUrl}/api/service-requests/track?requestId=REQ-STATUS-01&phone=9876543001`, {
-      method: 'GET',
-      headers: {
-        'X-Forwarded-For': probeIp,
-      },
-    });
-
-    assert.strictEqual(res.status, 429);
-    const body: any = await res.json();
-    assert.ok(body.error.includes('Too many tracking requests'));
   });
 
   server.close();

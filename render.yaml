@@ -25,6 +25,14 @@ services:
       - key: FRONTEND_URL
         sync: false
         # Set this to your frontend URL e.g. https://financial-services-web.onrender.com
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        value: financial-services-private-docs
 
   # ---------------------------------------------
   # Frontend Static Site

@@ -13,6 +13,11 @@ import {
   UPLOAD_ELIGIBLE_STATUSES,
 } from '../middleware/upload';
 import { config } from '../config';
+import {
+  uploadDocumentFile,
+  getDocumentStream,
+  deleteOrphanedR2Object,
+} from '../services/storageService';
 
 const router = Router();
 
@@ -159,20 +164,45 @@ router.post(
       // 3. Sanitize filename to prevent header injection or path traversal
       const safeOriginalName = path.basename(req.file.originalname).replace(/[\r\n"']/g, '_');
 
-      // 4. Create document record - deriving customerId strictly from the database record
-      const document = await prisma.document.create({
-        data: {
-          customerId: serviceRequest.customerId,
-          serviceRequestId: serviceRequest.id,
-          documentType: documentType.trim(),
-          originalName: safeOriginalName,
-          storedName: req.file.filename,
-          mimeType: req.file.mimetype,
-          fileSize: req.file.size,
-        },
+      // 4. Upload file to Cloudflare R2 (or local fallback if unconfigured)
+      const uploadResult = await uploadDocumentFile({
+        localFilePath: req.file.path,
+        originalName: safeOriginalName,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+        serviceRequestId: serviceRequest.id,
+        documentType: documentType.trim(),
       });
 
-      // 5. Update request status if in NEW or DOCUMENTS_REQUIRED
+      // 5. Create document record - deriving customerId strictly from the database record
+      let document: any;
+      try {
+        document = await prisma.document.create({
+          data: {
+            customerId: serviceRequest.customerId,
+            serviceRequestId: serviceRequest.id,
+            documentType: documentType.trim(),
+            originalName: safeOriginalName,
+            storedName: uploadResult.storedName,
+            mimeType: req.file.mimetype,
+            fileSize: req.file.size,
+          },
+        });
+
+        // Clean up temporary local file once successfully uploaded to R2
+        if (uploadResult.storageProvider === 'r2') {
+          cleanupUploadedFile(req);
+        }
+      } catch (dbError) {
+        // Clean up orphaned R2 object if database insert failed
+        if (uploadResult.storageProvider === 'r2') {
+          await deleteOrphanedR2Object(uploadResult.storedName);
+        }
+        cleanupUploadedFile(req);
+        throw dbError;
+      }
+
+      // 6. Update request status if in NEW or DOCUMENTS_REQUIRED
       if (serviceRequest.status === 'DOCUMENTS_REQUIRED' || serviceRequest.status === 'NEW') {
         await prisma.serviceRequest.update({
           where: { id: serviceRequestId },
@@ -207,7 +237,7 @@ router.post(
   }
 );
 
-// GET /api/documents/:id/download - Admin: download document
+// GET /api/documents/:id/download - Admin: download document (streamed securely from R2 or local disk)
 router.get('/:id/download', authenticateAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const document = await prisma.document.findUnique({ where: { id: req.params.id as string } });
@@ -216,17 +246,36 @@ router.get('/:id/download', authenticateAdmin, async (req: AuthRequest, res: Res
       return;
     }
 
-    const filePath = path.join(config.upload.dir, document.storedName);
-    if (!fs.existsSync(filePath)) {
+    const safeDownloadName = path.basename(document.originalName).replace(/[\r\n"']/g, '_');
+
+    const streamResult = await getDocumentStream(document.storedName);
+    if (!streamResult) {
       res.status(404).json({ error: 'File not found on server' });
       return;
     }
 
-    const safeDownloadName = path.basename(document.originalName).replace(/[\r\n"']/g, '_');
-    res.download(filePath, safeDownloadName);
+    res.setHeader('Content-Type', streamResult.contentType || document.mimeType || 'application/octet-stream');
+    if (streamResult.contentLength || document.fileSize) {
+      res.setHeader('Content-Length', (streamResult.contentLength || document.fileSize).toString());
+    }
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${safeDownloadName}"`
+    );
+
+    streamResult.stream.on('error', (streamErr: any) => {
+      console.error('Stream error during document download:', streamErr);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to stream document' });
+      }
+    });
+
+    streamResult.stream.pipe(res);
   } catch (error) {
     console.error('Download document error:', error);
-    res.status(500).json({ error: 'Failed to download document' });
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to download document' });
+    }
   }
 });
 
