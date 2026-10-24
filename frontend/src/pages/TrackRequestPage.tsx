@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Search, FileText, CheckCircle2, Clock, Upload, ArrowRight, ShieldCheck, XCircle, Mail, KeyRound, RotateCcw, ArrowLeft } from 'lucide-react';
+import { Search, FileText, CheckCircle2, Clock, Upload, ArrowRight, ShieldCheck, XCircle, Mail, KeyRound, RotateCcw, ArrowLeft, LogOut } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import api from '../lib/api';
 import type { ServiceRequest, Document } from '../types';
+
+const SESSION_STORAGE_KEY = 'customerTrackingSession';
 
 const TrackRequestPage = () => {
   const [requestId, setRequestId] = useState('');
@@ -23,6 +25,59 @@ const TrackRequestPage = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadToken, setUploadToken] = useState<string | null>(null);
 
+  // Restore authenticated tracking session on page refresh without sending another OTP email
+  useEffect(() => {
+    const savedSessionStr = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    if (!savedSessionStr) return;
+    try {
+      const saved = JSON.parse(savedSessionStr);
+      if (saved?.token && saved?.requestId) {
+        setRequestId(saved.requestId);
+        if (saved.phone) setPhone(saved.phone);
+        restoreSession(saved.token);
+      }
+    } catch {
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    }
+  }, []);
+
+  const restoreSession = async (token: string) => {
+    setIsLoading(true);
+    try {
+      const res = await api.get('/service-requests/track/session', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'X-Tracking-Token': token,
+        },
+      });
+      setRequestData(res.data);
+      if (res.data?.uploadToken || res.data?.sessionToken) {
+        setUploadToken(res.data.uploadToken || res.data.sessionToken);
+      }
+      setStep('details');
+    } catch (error: any) {
+      console.warn('Session restoration failed:', error);
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      setRequestData(null);
+      setUploadToken(null);
+      setStep('search');
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        toast.error(error.response?.data?.error || 'Tracking session expired. Please verify with a new code.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEndSession = () => {
+    sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    setRequestData(null);
+    setUploadToken(null);
+    setStep('search');
+    setOtp('');
+    toast.success('Tracking session ended');
+  };
+
   useEffect(() => {
     if (cooldown <= 0) return;
     const interval = setInterval(() => {
@@ -38,6 +93,7 @@ const TrackRequestPage = () => {
       return;
     }
 
+    sessionStorage.removeItem(SESSION_STORAGE_KEY);
     setIsLoading(true);
     setRequestData(null);
     setUploadToken(null);
@@ -90,8 +146,17 @@ const TrackRequestPage = () => {
       });
 
       setRequestData(res.data);
-      if (res.data?.uploadToken) {
-        setUploadToken(res.data.uploadToken);
+      const token = res.data?.sessionToken || res.data?.uploadToken;
+      if (token) {
+        setUploadToken(token);
+        sessionStorage.setItem(
+          SESSION_STORAGE_KEY,
+          JSON.stringify({
+            token,
+            requestId: requestId.trim().toUpperCase(),
+            phone: phone.trim(),
+          })
+        );
       }
       setStep('details');
       toast.success('Verification successful!');
@@ -165,6 +230,7 @@ const TrackRequestPage = () => {
       toast.error(errorMsg);
       if (error.response?.status === 401 || error.response?.status === 403) {
         setUploadToken(null);
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
       }
     } finally {
       setIsUploading(false);
@@ -321,13 +387,24 @@ const TrackRequestPage = () => {
                 <FileText className="w-5 h-5 mr-2 text-primary-600 print:hidden" />
                 <span className="print:text-2xl">Request Details</span>
               </h2>
-              <button
-                onClick={() => window.print()}
-                className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors print:hidden"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
-                Download Receipt
-              </button>
+              <div className="flex items-center gap-2 print:hidden">
+                <button
+                  type="button"
+                  onClick={handleEndSession}
+                  className="flex items-center gap-1.5 bg-slate-100 hover:bg-red-50 hover:text-red-600 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                  title="End tracking session"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>End Session</span>
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                  Download Receipt
+                </button>
+              </div>
             </div>
 
             <div className="space-y-4">
@@ -365,10 +442,15 @@ const TrackRequestPage = () => {
                 </div>
               )}
 
-              {requestData.request.adminNotes && (
-                <div className="bg-primary-50 p-4 rounded-lg">
-                  <span className="text-primary-800 block text-sm font-semibold mb-1">Message from Admin:</span>
-                  <p className="text-slate-700 text-sm">{requestData.request.adminNotes}</p>
+              {(requestData.request.customerMessage || requestData.request.documentRequestMessage || requestData.request.adminNotes) && (
+                <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg">
+                  <div className="flex items-center gap-2 text-amber-800 font-semibold text-sm mb-1">
+                    <FileText className="w-4 h-4" />
+                    <span>Requested Documents / Message from Team:</span>
+                  </div>
+                  <p className="text-slate-700 text-sm whitespace-pre-wrap">
+                    {requestData.request.customerMessage || requestData.request.documentRequestMessage || requestData.request.adminNotes}
+                  </p>
                 </div>
               )}
             </div>

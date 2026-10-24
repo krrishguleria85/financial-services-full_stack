@@ -300,7 +300,7 @@ const RequestsPage = () => {
                 Cancel
               </button>
               <button 
-                onClick={() => handleUpdateStatus(statusModal.id, statusModal.status, { note: adminNote })} 
+                onClick={() => handleUpdateStatus(statusModal.id, statusModal.status, { note: adminNote, customerMessage: adminNote })} 
                 className={`btn ${statusModal.status === 'DOCUMENTS_REQUIRED' ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white'}`}
                 disabled={!adminNote.trim()}
               >

@@ -27,6 +27,9 @@ export interface ServiceRequest {
   serviceId?: string;
   status: string;
   message?: string;
+  customerMessage?: string;
+  documentRequestMessage?: string;
+  adminNotes?: string | null;
   createdAt: string;
   customer?: Customer;
   service?: Service;

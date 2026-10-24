@@ -251,3 +251,101 @@ All rights reserved.`;
 
   return { subject, html, text };
 }
+
+export interface DocumentRequestEmailProps {
+  customerName?: string;
+  requestId: string;
+  serviceName: string;
+  note: string;
+  trackingUrl: string;
+}
+
+/**
+ * Generates branded HTML and plain-text email notifying the customer that additional
+ * documents are required for their service request.
+ */
+export function renderDocumentRequestEmail(props: DocumentRequestEmailProps): RenderedEmail {
+  const { customerName, requestId, serviceName, note, trackingUrl } = props;
+  const safeName = escapeHtml(customerName?.trim() || 'Valued Customer');
+  const safeService = escapeHtml(serviceName.trim());
+  const safeRequestId = escapeHtml(requestId.trim());
+  const safeNote = escapeHtml(note.trim());
+
+  const subject = `Action Required: Additional Documents Requested for Request ${requestId}`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${subject}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #1e293b; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 24px auto; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden; }
+    .header { background: #0f172a; padding: 24px; text-align: center; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 600; letter-spacing: 0.5px; }
+    .content { padding: 32px 24px; }
+    .greeting { font-size: 16px; font-weight: 600; color: #0f172a; margin-bottom: 12px; }
+    .lead { font-size: 15px; line-height: 1.6; color: #475569; margin-bottom: 24px; }
+    .doc-box { background: #fffbeb; border: 1px solid #fef3c7; border-left: 4px solid #d97706; border-radius: 6px; padding: 16px; margin: 20px 0; font-size: 14px; color: #92400e; }
+    .doc-box-title { font-weight: 700; margin-bottom: 8px; font-size: 15px; }
+    .doc-box-content { color: #1e293b; white-space: pre-line; line-height: 1.6; }
+    .button-container { text-align: center; margin: 32px 0 24px; }
+    .button { background: #0284c7; color: #ffffff !important; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-size: 15px; font-weight: 600; display: inline-block; }
+    .security-note { font-size: 12px; color: #94a3b8; line-height: 1.5; border-top: 1px solid #e2e8f0; padding-top: 20px; margin-top: 24px; }
+    .footer { background: #f8fafc; padding: 16px 24px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Financial Services</h1>
+    </div>
+    <div class="content">
+      <div class="greeting">Hello ${safeName},</div>
+      <p class="lead">
+        Our team is currently processing your request for <strong>${safeService}</strong> (Request ID: <strong>${safeRequestId}</strong>). Additional documents are required to proceed.
+      </p>
+
+      <div class="doc-box">
+        <div class="doc-box-title">Requested Documents &amp; Instructions:</div>
+        <div class="doc-box-content">${safeNote}</div>
+      </div>
+
+      <p class="lead">
+        Please access our secure tracking portal to upload the requested files:
+      </p>
+
+      <div class="button-container">
+        <a href="${trackingUrl}" class="button" target="_blank" rel="noopener noreferrer">Upload Documents</a>
+      </div>
+
+      <div class="security-note">
+        <strong>Security &amp; Privacy Notice:</strong> Please upload documents exclusively through our secure customer tracking portal. Do not reply to this email with sensitive attachments.
+      </div>
+    </div>
+    <div class="footer">
+      &copy; ${new Date().getFullYear()} Financial Services. All rights reserved.
+    </div>
+  </div>
+</body>
+</html>`;
+
+  const text = `Hello ${customerName?.trim() || 'Valued Customer'},
+
+Our team is currently processing your request for ${serviceName} (Request ID: ${requestId}). Additional documents are required to proceed.
+
+Requested Documents & Instructions:
+${note.trim()}
+
+Please access our secure tracking portal to upload the requested files:
+${trackingUrl}
+
+Security Notice:
+Please upload documents exclusively through our secure customer tracking portal. Do not email sensitive documents.
+
+Financial Services
+All rights reserved.`;
+
+  return { subject, html, text };
+}
