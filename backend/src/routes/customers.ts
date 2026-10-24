@@ -139,27 +139,83 @@ router.delete('/:id', authenticateAdmin, async (req: AuthRequest, res: Response)
   try {
     const customerId = req.params.id as string;
 
-    // 1. Clean up physical document files from Cloudflare R2 and/or local disk
-    const customerDocs = await prisma.document.findMany({
-      where: { customerId },
-      select: { storedName: true },
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { id: true, name: true },
     });
-    for (const doc of customerDocs) {
-      await deleteDocumentFile(doc.storedName);
+    if (!customer) {
+      res.status(404).json({ error: 'Customer not found' });
+      return;
     }
 
-    // 2. Find all service requests so we can delete their child history records
+    // 1. Find all service requests for this customer
     const serviceRequests = await prisma.serviceRequest.findMany({
       where: { customerId },
-      select: { id: true }
+      select: { id: true },
     });
     const requestIds = serviceRequests.map((sr: any) => sr.id);
 
-    // 3. Safely delete everything in a transaction so we don't get foreign key errors
+    // 2. Identify every document associated with this customer:
+    // both directly (customerId) and through all their service requests
+    const customerDocs = await prisma.document.findMany({
+      where: {
+        OR: [
+          { customerId },
+          ...(requestIds.length > 0 ? [{ serviceRequestId: { in: requestIds } }] : []),
+        ],
+      },
+      select: { id: true, storedName: true },
+    });
+
+    const uniqueStoredNames = Array.from(
+      new Set(customerDocs.map((doc: any) => doc.storedName).filter(Boolean))
+    );
+
+    // 3. Clean up physical document files from Cloudflare R2 and/or local disk with retry
+    const failedDeletions: { key: string; error?: string }[] = [];
+    for (const storedName of uniqueStoredNames) {
+      const result = await deleteDocumentFile(storedName);
+      if (!result.success) {
+        failedDeletions.push({ key: result.key, error: result.error });
+      }
+    }
+
+    // If any file deletion failed, halt before database deletion to prevent orphaned files
+    if (failedDeletions.length > 0) {
+      console.error(
+        `[CUSTOMER_DELETION_INCOMPLETE] customerId="${customerId}" failedFiles=${JSON.stringify(failedDeletions)}`
+      );
+      res.status(502).json({
+        error:
+          'Failed to delete some associated files from cloud storage. Deletion was halted and database records were preserved to prevent orphaned files. Please retry.',
+        code: 'STORAGE_CLEANUP_FAILED',
+        failedFiles: failedDeletions,
+      });
+      return;
+    }
+
+    // 4. Safely delete database records in a single atomic transaction
     await prisma.$transaction([
-      prisma.requestStatusHistory.deleteMany({ where: { serviceRequestId: { in: requestIds } } }),
-      prisma.adminNote.deleteMany({ where: { customerId } }),
-      prisma.document.deleteMany({ where: { customerId } }),
+      prisma.requestStatusHistory.deleteMany({
+        where: { serviceRequestId: { in: requestIds } },
+      }),
+      // Admin notes referencing customerId OR any of the customer's service requests (handles customerId = null)
+      prisma.adminNote.deleteMany({
+        where: {
+          OR: [
+            { customerId },
+            ...(requestIds.length > 0 ? [{ serviceRequestId: { in: requestIds } }] : []),
+          ],
+        },
+      }),
+      prisma.document.deleteMany({
+        where: {
+          OR: [
+            { customerId },
+            ...(requestIds.length > 0 ? [{ serviceRequestId: { in: requestIds } }] : []),
+          ],
+        },
+      }),
       prisma.appointment.deleteMany({ where: { customerId } }),
       prisma.serviceRequest.deleteMany({ where: { customerId } }),
       prisma.customer.delete({ where: { id: customerId } }),

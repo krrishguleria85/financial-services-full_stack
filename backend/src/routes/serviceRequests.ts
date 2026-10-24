@@ -933,8 +933,10 @@ router.patch('/:id/status', authenticateAdmin, async (req: AuthRequest, res: Res
 // DELETE /api/service-requests/:id - Admin: delete request
 router.delete('/:id', authenticateAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const serviceRequestId = req.params.id as string;
     const existing = await prisma.serviceRequest.findUnique({
-      where: { id: req.params.id as string },
+      where: { id: serviceRequestId },
+      select: { id: true, customerId: true, requestId: true },
     });
 
     if (!existing) {
@@ -942,33 +944,52 @@ router.delete('/:id', authenticateAdmin, async (req: AuthRequest, res: Response)
       return;
     }
 
-    // Clean up document files from Cloudflare R2 and/or local disk before deleting database records
+    // 1. Clean up document files from Cloudflare R2 and/or local disk before deleting database records
     const docs = await prisma.document.findMany({
-      where: { serviceRequestId: req.params.id as string },
-      select: { storedName: true },
+      where: { serviceRequestId },
+      select: { id: true, storedName: true },
     });
-    for (const doc of docs) {
-      await deleteDocumentFile(doc.storedName);
+    const uniqueStoredNames = Array.from(
+      new Set(docs.map((d: any) => d.storedName).filter(Boolean))
+    );
+
+    const failedDeletions: { key: string; error?: string }[] = [];
+    for (const storedName of uniqueStoredNames) {
+      const result = await deleteDocumentFile(storedName);
+      if (!result.success) {
+        failedDeletions.push({ key: result.key, error: result.error });
+      }
     }
 
-    // Delete related RequestStatusHistory
-    await prisma.requestStatusHistory.deleteMany({
-      where: { serviceRequestId: req.params.id as string }
-    });
-    
-    // Delete related Documents
-    await prisma.document.deleteMany({
-      where: { serviceRequestId: req.params.id as string }
-    });
+    // If any file deletion failed, halt before database deletion to prevent orphaned files
+    if (failedDeletions.length > 0) {
+      console.error(
+        `[SERVICE_REQUEST_DELETION_INCOMPLETE] serviceRequestId="${serviceRequestId}" failedFiles=${JSON.stringify(failedDeletions)}`
+      );
+      res.status(502).json({
+        error:
+          'Failed to delete some associated files from cloud storage. Deletion was halted and database records were preserved to prevent orphaned files. Please retry.',
+        code: 'STORAGE_CLEANUP_FAILED',
+        failedFiles: failedDeletions,
+      });
+      return;
+    }
 
-    // Delete related AdminNotes
-    await prisma.adminNote.deleteMany({
-      where: { serviceRequestId: req.params.id as string }
-    });
-
-    await prisma.serviceRequest.delete({
-      where: { id: req.params.id as string },
-    });
+    // 2. Delete database records in a single atomic transaction
+    await prisma.$transaction([
+      prisma.requestStatusHistory.deleteMany({
+        where: { serviceRequestId },
+      }),
+      prisma.document.deleteMany({
+        where: { serviceRequestId },
+      }),
+      prisma.adminNote.deleteMany({
+        where: { serviceRequestId },
+      }),
+      prisma.serviceRequest.delete({
+        where: { id: serviceRequestId },
+      }),
+    ]);
 
     res.json({ message: 'Service request deleted' });
   } catch (error) {

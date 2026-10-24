@@ -25,6 +25,9 @@ import ContentPage from './pages/admin/ContentPage';
 import CustomersPage from './pages/admin/CustomersPage';
 import ServicesManagementPage from './pages/admin/ServicesManagementPage';
 import SettingsPage from './pages/admin/SettingsPage';
+import AdminDeadlinesPage from './pages/admin/AdminDeadlinesPage';
+import BlogManagementPage from './pages/admin/BlogManagementPage';
+import EnquiriesPage from './pages/admin/EnquiriesPage';
 
 function App() {
   return (
@@ -55,6 +58,9 @@ function App() {
             <Route path="appointments" element={<AppointmentsPage />} />
             <Route path="customers" element={<CustomersPage />} />
             <Route path="services" element={<ServicesManagementPage />} />
+            <Route path="deadlines" element={<AdminDeadlinesPage />} />
+            <Route path="blog" element={<BlogManagementPage />} />
+            <Route path="enquiries" element={<EnquiriesPage />} />
             <Route path="content" element={<ContentPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>

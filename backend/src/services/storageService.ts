@@ -255,42 +255,51 @@ export interface DeletionResult {
 
 /**
  * Deletes a document file from R2 and/or local storage.
- * Operations are idempotent and fault-tolerant: R2 or filesystem errors do not throw
- * unhandled exceptions, preserving database transactions and preventing data corruption.
+ * Operations are idempotent and fault-tolerant with automatic retries for transient cloud storage errors.
  * Failed deletions are logged with observable tags without exposing sensitive customer data or credentials.
  */
-export async function deleteDocumentFile(storedName: string): Promise<DeletionResult> {
+export async function deleteDocumentFile(
+  storedName: string,
+  options?: { maxRetries?: number; retryDelayMs?: number }
+): Promise<DeletionResult> {
   const isR2 = isR2ObjectKey(storedName);
   const normalizedKey = normalizeR2Key(storedName);
+  const maxRetries = options?.maxRetries ?? 2;
+  const retryDelayMs = options?.retryDelayMs ?? 100;
   let r2Success = true;
   let r2Error: string | undefined;
 
-  // 1. Delete from R2
+  // 1. Delete from R2 with automatic retry on transient failure
   if (isR2 || isR2Configured()) {
-    if (mockStorage?.delete) {
+    let attempts = 0;
+    while (attempts <= maxRetries) {
+      attempts++;
       try {
-        await mockStorage.delete({
-          bucket: config.r2.bucketName,
-          key: normalizedKey,
-        });
-      } catch (err: any) {
-        r2Success = false;
-        r2Error = err?.message || 'Mock R2 deletion error';
-        console.error(`[STORAGE_DELETION_FAILED] bucket="${config.r2.bucketName}" key="${normalizedKey}" reason="${err?.name || 'MockDeleteError'}" error="${r2Error}"`);
-      }
-    } else {
-      const client = getS3Client();
-      if (client) {
-        try {
-          const command = new DeleteObjectCommand({
-            Bucket: config.r2.bucketName,
-            Key: normalizedKey,
+        if (mockStorage?.delete) {
+          await mockStorage.delete({
+            bucket: config.r2.bucketName,
+            key: normalizedKey,
           });
-          await client.send(command);
-        } catch (err: any) {
+        } else {
+          const client = getS3Client();
+          if (client) {
+            const command = new DeleteObjectCommand({
+              Bucket: config.r2.bucketName,
+              Key: normalizedKey,
+            });
+            await client.send(command);
+          }
+        }
+        r2Success = true;
+        r2Error = undefined;
+        break;
+      } catch (err: any) {
+        r2Error = err?.message ? String(err.message).slice(0, 200) : (err?.name || 'Unknown R2 deletion error');
+        if (attempts <= maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs * attempts));
+        } else {
           r2Success = false;
-          r2Error = err?.message ? String(err.message).slice(0, 200) : (err?.name || 'Unknown R2 deletion error');
-          console.error(`[STORAGE_DELETION_FAILED] bucket="${config.r2.bucketName}" key="${normalizedKey}" reason="${err?.name || 'R2DeleteError'}" error="${r2Error}"`);
+          console.error(`[STORAGE_DELETION_FAILED] bucket="${config.r2.bucketName}" key="${normalizedKey}" reason="${err?.name || 'R2DeleteError'}" attempts=${attempts} error="${r2Error}"`);
         }
       }
     }
