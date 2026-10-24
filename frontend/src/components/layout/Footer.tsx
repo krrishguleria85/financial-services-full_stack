@@ -26,7 +26,7 @@ const Footer = () => {
           <div className="space-y-4">
             <Link to="/" className="flex items-center gap-2 text-white">
               <Shield className="h-8 w-8 text-primary-500" />
-              <span className="font-bold text-xl">{settings.businessName || 'Your Business Name'}</span>
+              <span className="font-bold text-xl">{settings.businessName && settings.businessName !== 'Your Business Name' ? settings.businessName : 'Rajesh Guleria'}</span>
             </Link>
             <p className="text-sm text-slate-400">
               {settings.businessDescription || 'Professional assistance for Insurance, Tax & GST Services.'}
