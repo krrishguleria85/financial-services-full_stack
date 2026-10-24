@@ -897,5 +897,47 @@ test('Document Upload Security & File Validation Suite', async (t) => {
     assert.ok(allowHeaders.includes('authorization'), `CORS must permit authorization in allowed headers, got: ${allowHeaders}`);
   });
 
+  await t.test('25. Exact production request shape: multipart upload succeeds for status=NEW with dual auth headers (Bearer and X-Upload-Token)', async () => {
+    const validToken = makeValidToken('req-status-new', 'REQ-STATUS-01');
+    const formData = new FormData();
+    formData.append('documentType', 'Identity Proof');
+    const blob = new Blob([validPdfBytes], { type: 'application/pdf' });
+    formData.append('file', blob, 'identity-proof.pdf');
+
+    const res = await fetch(`${baseUrl}/api/documents/upload/req-status-new`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${validToken}`,
+        'X-Upload-Token': validToken,
+        'X-Forwarded-For': getNextIp(),
+      },
+      body: formData,
+    });
+
+    assert.strictEqual(res.status, 201, 'Exact production request shape must succeed with 201 Created');
+    const body: any = await res.json();
+    assert.strictEqual(body.message, 'Document uploaded successfully');
+    assert.strictEqual(body.document.documentType, 'Identity Proof');
+    assert.strictEqual(body.document.originalName, 'identity-proof.pdf');
+  });
+
+  await t.test('26. Exact production failure reproduction: Content-Type application/json with serialized FormData yields 400 No file uploaded', async () => {
+    const validToken = makeValidToken('req-status-new', 'REQ-STATUS-01');
+    const res = await fetch(`${baseUrl}/api/documents/upload/req-status-new`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${validToken}`,
+        'X-Upload-Token': validToken,
+        'X-Forwarded-For': getNextIp(),
+      },
+      body: JSON.stringify({ file: {}, documentType: 'Identity Proof' }),
+    });
+
+    assert.strictEqual(res.status, 400, 'JSON body without multipart boundary must be rejected with 400');
+    const body: any = await res.json();
+    assert.strictEqual(body.error, 'No file uploaded');
+  });
+
   server.close();
 });
