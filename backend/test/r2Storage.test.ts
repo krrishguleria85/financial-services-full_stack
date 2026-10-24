@@ -127,6 +127,13 @@ test('Cloudflare R2 Object Storage Suite', async (t) => {
   (prisma.document as any).findUnique = async (q: any) => mockDb.documents.get(q.where.id) || null;
   (prisma.document as any).findMany = async (q: any) => {
     return Array.from(mockDb.documents.values()).filter((d) => {
+      if (q.where?.OR && Array.isArray(q.where.OR)) {
+        return q.where.OR.some((c: any) => {
+          if (c.customerId && d.customerId === c.customerId) return true;
+          if (c.serviceRequestId?.in && c.serviceRequestId.in.includes(d.serviceRequestId)) return true;
+          return false;
+        });
+      }
       if (q.where?.serviceRequestId && d.serviceRequestId !== q.where.serviceRequestId) return false;
       if (q.where?.customerId && d.customerId !== q.where.customerId) return false;
       return true;
@@ -134,8 +141,17 @@ test('Cloudflare R2 Object Storage Suite', async (t) => {
   };
   (prisma.document as any).deleteMany = async (q: any) => {
     for (const [id, d] of Array.from(mockDb.documents.entries())) {
-      if (q.where?.serviceRequestId === d.serviceRequestId || q.where?.customerId === d.customerId) {
-        mockDb.documents.delete(id);
+      if (q.where?.OR && Array.isArray(q.where.OR)) {
+        const matches = q.where.OR.some((c: any) => {
+          if (c.customerId && d.customerId === c.customerId) return true;
+          if (c.serviceRequestId?.in && c.serviceRequestId.in.includes(d.serviceRequestId)) return true;
+          return false;
+        });
+        if (matches) mockDb.documents.delete(id);
+      } else {
+        if (q.where?.serviceRequestId === d.serviceRequestId || q.where?.customerId === d.customerId) {
+          mockDb.documents.delete(id);
+        }
       }
     }
     return { count: 1 };
@@ -572,7 +588,7 @@ test('Cloudflare R2 Object Storage Suite', async (t) => {
       assert.ok(orphanLog, 'Must emit observable [ORPHAN_CLEANUP_FAILED] tag');
       assert.ok(orphanLog.includes('documents/req-test-fail/orphan.pdf'), 'Must include object key');
 
-      // 3. Customer deletion must proceed with database deletion even if R2 fails
+      // 3. Customer deletion halts and returns 502 when R2 cleanup fails, preserving DB records to prevent orphans
       mockDb.customers.set('cust-fail-uuid', {
         id: 'cust-fail-uuid',
         name: 'Test Customer',
@@ -591,9 +607,27 @@ test('Cloudflare R2 Object Storage Suite', async (t) => {
         headers: { Authorization: `Bearer ${adminToken}` },
       });
 
-      assert.strictEqual(custDelRes.status, 200);
-      assert.strictEqual(mockDb.customers.has('cust-fail-uuid'), false, 'Customer must be deleted from DB');
-      assert.strictEqual(mockDb.documents.has('doc-fail-id'), false, 'Document records must be removed from DB');
+      // Must NOT return false success
+      assert.strictEqual(custDelRes.status, 502);
+      const errBody: any = await custDelRes.json();
+      assert.strictEqual(errBody.code, 'STORAGE_CLEANUP_FAILED');
+      assert.strictEqual(mockDb.customers.has('cust-fail-uuid'), true, 'Customer must be preserved in DB on storage failure');
+      assert.strictEqual(mockDb.documents.has('doc-fail-id'), true, 'Document records must be preserved in DB on storage failure');
+
+      // 4. Retry succeeds once storage is healthy
+      setMockStorage({
+        upload: async () => {},
+        download: async () => null,
+        delete: async () => {},
+      });
+
+      const retryDelRes = await fetch(`${baseUrl}/api/admin/customers/cust-fail-uuid`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      assert.strictEqual(retryDelRes.status, 200);
+      assert.strictEqual(mockDb.customers.has('cust-fail-uuid'), false, 'Customer deleted on retry');
+      assert.strictEqual(mockDb.documents.has('doc-fail-id'), false, 'Document records deleted on retry');
     } finally {
       console.error = originalConsoleError;
       setMockStorage(null);
