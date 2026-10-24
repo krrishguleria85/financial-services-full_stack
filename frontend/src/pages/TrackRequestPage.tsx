@@ -25,19 +25,38 @@ const TrackRequestPage = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadToken, setUploadToken] = useState<string | null>(null);
 
+  // Check if an existing tracking session exists in sessionStorage synchronously
+  const [isRestoring, setIsRestoring] = useState<boolean>(() => {
+    try {
+      const savedSessionStr = sessionStorage.getItem(SESSION_STORAGE_KEY);
+      if (!savedSessionStr) return false;
+      const saved = JSON.parse(savedSessionStr);
+      return Boolean(saved?.token && saved?.requestId);
+    } catch {
+      return false;
+    }
+  });
+
   // Restore authenticated tracking session on page refresh without sending another OTP email
   useEffect(() => {
     const savedSessionStr = sessionStorage.getItem(SESSION_STORAGE_KEY);
-    if (!savedSessionStr) return;
+    if (!savedSessionStr) {
+      setIsRestoring(false);
+      return;
+    }
     try {
       const saved = JSON.parse(savedSessionStr);
       if (saved?.token && saved?.requestId) {
         setRequestId(saved.requestId);
         if (saved.phone) setPhone(saved.phone);
         restoreSession(saved.token);
+      } else {
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        setIsRestoring(false);
       }
     } catch {
       sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      setIsRestoring(false);
     }
   }, []);
 
@@ -54,18 +73,26 @@ const TrackRequestPage = () => {
       if (res.data?.uploadToken || res.data?.sessionToken) {
         setUploadToken(res.data.uploadToken || res.data.sessionToken);
       }
+      if (res.data?.request?.requestId) {
+        setRequestId(res.data.request.requestId);
+      }
       setStep('details');
     } catch (error: any) {
       console.warn('Session restoration failed:', error);
-      sessionStorage.removeItem(SESSION_STORAGE_KEY);
-      setRequestData(null);
-      setUploadToken(null);
-      setStep('search');
-      if (error.response?.status === 401 || error.response?.status === 403) {
+      if (error.response?.status === 401 || error.response?.status === 403 || error.response?.status === 404) {
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        setRequestData(null);
+        setUploadToken(null);
+        setStep('search');
         toast.error(error.response?.data?.error || 'Tracking session expired. Please verify with a new code.');
+      } else {
+        // Transient error (network failure, 5xx, etc.) - do not wipe the valid token from sessionStorage
+        setStep('search');
+        toast.error('Unable to restore tracking session. Please check your connection or retry.');
       }
     } finally {
       setIsLoading(false);
+      setIsRestoring(false);
     }
   };
 
@@ -275,7 +302,14 @@ const TrackRequestPage = () => {
         </p>
       </div>
 
-      {step !== 'otp' && (
+      {isRestoring && (
+        <div className="max-w-xl mx-auto mb-12 text-center p-8 bg-white rounded-xl shadow-lg border border-slate-100 print:hidden">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent mb-4"></div>
+          <p className="text-slate-600 font-medium">Restoring your tracking session...</p>
+        </div>
+      )}
+
+      {!isRestoring && step === 'search' && (
         <div className="max-w-xl mx-auto mb-12 print:hidden">
           <form onSubmit={handleSearch} className="card p-6 bg-white shadow-lg space-y-4">
             <div>

@@ -56,7 +56,7 @@ function createTestServer() {
     origin: (origin, callback) => callback(null, true),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Upload-Token', 'x-upload-token'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Upload-Token', 'x-upload-token', 'X-Tracking-Token', 'x-tracking-token'],
     maxAge: 86400,
   }));
   app.use(express.json());

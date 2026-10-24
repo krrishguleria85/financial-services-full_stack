@@ -14,7 +14,11 @@ api.interceptors.request.use((config) => {
     delete config.headers['Content-Type'];
   }
   const token = localStorage.getItem('adminToken');
-  if (token) {
+  const existingAuth =
+    config.headers.Authorization ||
+    (typeof (config.headers as any).get === 'function' &&
+      (config.headers as any).get('Authorization'));
+  if (token && !existingAuth) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;

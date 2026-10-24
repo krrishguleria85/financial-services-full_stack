@@ -26,6 +26,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import express, { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import prisma from '../src/config/database';
 import { config } from '../src/config';
@@ -44,6 +45,13 @@ import {
 function createTestServer() {
   const app = express();
   app.set('trust proxy', 1);
+  app.use(cors({
+    origin: (origin, callback) => callback(null, true),
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Upload-Token', 'x-upload-token', 'X-Tracking-Token', 'x-tracking-token'],
+    maxAge: 86400,
+  }));
   app.use(express.json());
 
   app.use('/api/service-requests', serviceRequestRoutes);
@@ -591,5 +599,108 @@ test('Tracking Session & Customer Document Request Message Suite', async (t) => 
     const body = await res.json();
     assert.strictEqual(body.request.customerMessage, 'Legacy note: Upload PAN card photo');
     assert.strictEqual(body.request.adminNotes, null);
+  });
+
+  await t.test('11. CORS preflight OPTIONS request permits X-Tracking-Token and Authorization headers', async () => {
+    const res = await fetch(`${baseUrl}/track/session`, {
+      method: 'OPTIONS',
+      headers: {
+        'Origin': 'https://financial-services-web.onrender.com',
+        'Access-Control-Request-Method': 'GET',
+        'Access-Control-Request-Headers': 'authorization, x-tracking-token',
+      },
+    });
+
+    assert.strictEqual(res.status, 204, 'CORS preflight OPTIONS must return 204');
+    const allowHeaders = (res.headers.get('access-control-allow-headers') || '').toLowerCase();
+    assert.ok(allowHeaders.includes('x-tracking-token'), `CORS must permit x-tracking-token in allowed headers, got: ${allowHeaders}`);
+    assert.ok(allowHeaders.includes('authorization'), `CORS must permit authorization in allowed headers, got: ${allowHeaders}`);
+  });
+
+  await t.test('12. Expired tracking session token via X-Tracking-Token header returns HTTP 401 SESSION_EXPIRED', async () => {
+    const expiredToken = jwt.sign(
+      {
+        sub: testRequest.id,
+        requestId: testRequest.requestId,
+        purpose: 'customer_tracking_session',
+        permissions: ['track', 'upload'],
+      },
+      config.jwt.secret,
+      { expiresIn: '-1s' }
+    );
+
+    const res = await fetch(`${baseUrl}/track/session`, {
+      method: 'GET',
+      headers: {
+        'X-Tracking-Token': expiredToken,
+      },
+    });
+
+    assert.strictEqual(res.status, 401);
+    const body = await res.json();
+    assert.strictEqual(body.code, 'SESSION_EXPIRED');
+    assert.ok(body.error.toLowerCase().includes('expired'));
+  });
+
+  await t.test('13. Tampered or invalid token signature via X-Tracking-Token header returns HTTP 401 INVALID_TOKEN', async () => {
+    const tamperedToken = jwt.sign(
+      {
+        sub: testRequest.id,
+        requestId: testRequest.requestId,
+        purpose: 'customer_tracking_session',
+      },
+      'wrong-secret-key',
+      { expiresIn: '15m' }
+    );
+
+    const res = await fetch(`${baseUrl}/track/session`, {
+      method: 'GET',
+      headers: {
+        'X-Tracking-Token': tamperedToken,
+      },
+    });
+
+    assert.strictEqual(res.status, 401);
+    const body = await res.json();
+    assert.strictEqual(body.code, 'INVALID_TOKEN');
+  });
+
+  await t.test('14. Malformed non-JWT token string returns HTTP 401 INVALID_TOKEN', async () => {
+    const res = await fetch(`${baseUrl}/track/session`, {
+      method: 'GET',
+      headers: {
+        'Authorization': 'Bearer totally-malformed-not-a-jwt',
+        'X-Tracking-Token': 'totally-malformed-not-a-jwt',
+      },
+    });
+
+    assert.strictEqual(res.status, 401);
+    const body = await res.json();
+    assert.strictEqual(body.code, 'INVALID_TOKEN');
+  });
+
+  await t.test('15. Token sub referencing non-existent service request returns HTTP 404 NOT_FOUND', async () => {
+    const orphanToken = jwt.sign(
+      {
+        sub: 'non-existent-uuid',
+        requestId: 'REQ-DOES-NOT-EXIST',
+        purpose: 'customer_tracking_session',
+        permissions: ['track'],
+      },
+      config.jwt.secret,
+      { expiresIn: '15m' }
+    );
+
+    const res = await fetch(`${baseUrl}/track/session`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${orphanToken}`,
+        'X-Tracking-Token': orphanToken,
+      },
+    });
+
+    assert.strictEqual(res.status, 404);
+    const body = await res.json();
+    assert.strictEqual(body.code, 'NOT_FOUND');
   });
 });
