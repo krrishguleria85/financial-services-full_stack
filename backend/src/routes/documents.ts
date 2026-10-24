@@ -88,10 +88,17 @@ export const verifyUploadAuthorization = async (
       return;
     }
 
-    // 3. Verify token purpose and target service request binding
-    if (decoded.purpose !== 'customer_document_upload') {
+    // 3. Verify token purpose, permissions, and target service request binding
+    const validUploadPurposes = ['customer_document_upload', 'customer_tracking_session', 'customer_tracking_and_upload'];
+    if (!validUploadPurposes.includes(decoded.purpose)) {
       console.warn(`[Upload Auth] Invalid purpose "${decoded.purpose}" for serviceRequestId=${serviceRequestId}`);
       res.status(403).json({ error: 'Invalid token purpose' });
+      return;
+    }
+
+    if (decoded.permissions && !decoded.permissions.includes('upload')) {
+      console.warn(`[Upload Auth] Token missing upload permission for serviceRequestId=${serviceRequestId}`);
+      res.status(403).json({ error: 'Token is not authorized for document upload' });
       return;
     }
 
@@ -109,6 +116,12 @@ export const verifyUploadAuthorization = async (
     if (!serviceRequest) {
       console.warn(`[Upload Auth] Service request not found in DB for id=${serviceRequestId}`);
       res.status(404).json({ error: 'Service request not found' });
+      return;
+    }
+
+    if (decoded.requestId && decoded.requestId !== serviceRequest.requestId) {
+      console.warn(`[Upload Auth] Token requestId mismatch: decoded.requestId=${decoded.requestId} vs db=${serviceRequest.requestId}`);
+      res.status(403).json({ error: 'Token is not authorized for this service request' });
       return;
     }
 

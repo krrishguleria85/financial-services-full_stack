@@ -10,7 +10,7 @@ import { authenticateAdmin, AuthRequest } from '../middleware/auth';
 import { UPLOAD_ELIGIBLE_STATUSES } from '../middleware/upload';
 import { generateRequestId, maskPAN, encryptData, decryptData } from '../utils/helpers';
 import { sendEmail } from '../services/emailService';
-import { renderServiceRequestConfirmationEmail, renderOtpEmail } from '../utils/emailTemplates';
+import { renderServiceRequestConfirmationEmail, renderOtpEmail, renderDocumentRequestEmail } from '../utils/emailTemplates';
 import { generateOtp, generateSalt, hashOtp, verifyOtpHash, maskEmail } from '../utils/otp';
 import { otpRequestLimiter, otpVerifyLimiter } from '../middleware/otpRateLimit';
 import { deleteDocumentFile } from '../services/storageService';
@@ -21,6 +21,43 @@ export function isValidEmail(email: unknown): boolean {
   if (!trimmed || trimmed.length > 254) return false;
   const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
   return emailRegex.test(trimmed);
+}
+
+/**
+ * Safely extracts dedicated customer-visible document request instructions.
+ * Strictly ignores internal AdminNote records to prevent leaking internal staff notes.
+ */
+export function extractCustomerMessage(serviceRequest: any): string | null {
+  if (serviceRequest?.status !== 'DOCUMENTS_REQUIRED') {
+    return null;
+  }
+
+  // 1. Check formData.customerMessage (primary dedicated channel)
+  try {
+    if (serviceRequest.formData) {
+      const parsed =
+        typeof serviceRequest.formData === 'string'
+          ? JSON.parse(serviceRequest.formData)
+          : serviceRequest.formData;
+      if (parsed?.customerMessage && typeof parsed.customerMessage === 'string' && parsed.customerMessage.trim()) {
+        return parsed.customerMessage.trim();
+      }
+    }
+  } catch {
+    // Ignore JSON parsing errors
+  }
+
+  // 2. Fall back to statusHistory entry for DOCUMENTS_REQUIRED
+  if (Array.isArray(serviceRequest.statusHistory)) {
+    const docReqHistory = serviceRequest.statusHistory.find(
+      (h: any) => h.newStatus === 'DOCUMENTS_REQUIRED' && h.note && typeof h.note === 'string' && h.note.trim()
+    );
+    if (docReqHistory) {
+      return docReqHistory.note.trim();
+    }
+  }
+
+  return null;
 }
 
 const router = Router();
@@ -228,6 +265,9 @@ router.post('/track/verify-otp', otpVerifyLimiter, async (req: Request, res: Res
       include: {
         service: true,
         documents: true,
+        statusHistory: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
 
@@ -337,31 +377,31 @@ router.post('/track/verify-otp', otpVerifyLimiter, async (req: Request, res: Res
       return;
     }
 
-    // Issue short-lived signed upload token if request is eligible for document upload
+    // Issue short-lived signed tracking session token with scoped permissions
     const isUploadEligible = UPLOAD_ELIGIBLE_STATUSES.has(serviceRequest.status);
-    let uploadToken: string | null = null;
+    const sessionToken = jwt.sign(
+      {
+        sub: serviceRequest.id,
+        requestId: serviceRequest.requestId,
+        purpose: 'customer_tracking_session',
+        permissions: isUploadEligible ? ['track', 'upload'] : ['track'],
+        jti: crypto.randomUUID(),
+      },
+      config.jwt.secret,
+      {
+        algorithm: 'HS256',
+        expiresIn: '15m',
+      }
+    );
 
-    if (isUploadEligible) {
-      uploadToken = jwt.sign(
-        {
-          sub: serviceRequest.id,
-          requestId: serviceRequest.requestId,
-          purpose: 'customer_document_upload',
-          jti: crypto.randomUUID(),
-        },
-        config.jwt.secret,
-        {
-          algorithm: 'HS256',
-          expiresIn: '15m',
-        }
-      );
-    }
+    const customerMessage = extractCustomerMessage(serviceRequest);
 
     // Strictly minimized, customer-safe response payload
     res.json({
       success: true,
       message: 'Verification successful.',
-      uploadToken,
+      sessionToken,
+      uploadToken: isUploadEligible ? sessionToken : null,
       request: {
         id: serviceRequest.id,
         requestId: serviceRequest.requestId,
@@ -370,6 +410,8 @@ router.post('/track/verify-otp', otpVerifyLimiter, async (req: Request, res: Res
         service: serviceRequest.service ? {
           name: serviceRequest.service.name,
         } : null,
+        customerMessage,
+        documentRequestMessage: customerMessage,
         adminNotes: null, // Strictly withhold internal notes; schema lacks a customer-approved message channel
       },
       documents: serviceRequest.documents.map((d: any) => ({
@@ -563,6 +605,98 @@ router.get('/track', (_req: Request, res: Response): void => {
   });
 });
 
+// GET /api/service-requests/track/session - Authenticated tracking session verification (refresh & tab reuse)
+router.get('/track/session', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const rawToken =
+      (req.headers['x-tracking-token'] as string) ||
+      (req.headers['x-upload-token'] as string) ||
+      (req.headers.authorization?.startsWith('Bearer ')
+        ? req.headers.authorization.split(' ')[1]
+        : undefined);
+
+    if (!rawToken) {
+      res.status(401).json({ error: 'Tracking session token is required', code: 'TOKEN_REQUIRED' });
+      return;
+    }
+
+    let decoded: any;
+    try {
+      decoded = jwt.verify(rawToken, config.jwt.secret, { algorithms: ['HS256'] });
+    } catch (jwtErr: any) {
+      if (jwtErr?.name === 'TokenExpiredError') {
+        res.status(401).json({
+          error: 'Tracking session has expired. Please verify with a new code.',
+          code: 'SESSION_EXPIRED',
+        });
+        return;
+      }
+      res.status(401).json({ error: 'Invalid tracking session token', code: 'INVALID_TOKEN' });
+      return;
+    }
+
+    const validPurposes = ['customer_tracking_session', 'customer_tracking_and_upload', 'customer_document_upload'];
+    if (!validPurposes.includes(decoded.purpose)) {
+      res.status(403).json({ error: 'Invalid token purpose', code: 'INVALID_PURPOSE' });
+      return;
+    }
+
+    if (decoded.permissions && !decoded.permissions.includes('track')) {
+      res.status(403).json({ error: 'Token is not authorized for tracking', code: 'INSUFFICIENT_PERMISSIONS' });
+      return;
+    }
+
+    const serviceRequest = await prisma.serviceRequest.findUnique({
+      where: { id: decoded.sub },
+      include: {
+        service: true,
+        documents: true,
+        statusHistory: {
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (!serviceRequest || (decoded.requestId && serviceRequest.requestId !== decoded.requestId)) {
+      res.status(404).json({ error: 'Service request not found', code: 'NOT_FOUND' });
+      return;
+    }
+
+    const customerMessage = extractCustomerMessage(serviceRequest);
+    const isUploadEligible = UPLOAD_ELIGIBLE_STATUSES.has(serviceRequest.status);
+
+    res.json({
+      success: true,
+      sessionToken: rawToken,
+      uploadToken: isUploadEligible ? rawToken : null,
+      request: {
+        id: serviceRequest.id,
+        requestId: serviceRequest.requestId,
+        status: serviceRequest.status,
+        createdAt: serviceRequest.createdAt,
+        service: serviceRequest.service ? {
+          name: serviceRequest.service.name,
+        } : null,
+        customerMessage,
+        documentRequestMessage: customerMessage,
+        adminNotes: null, // Strictly withhold internal notes
+      },
+      documents: serviceRequest.documents.map((d: any) => ({
+        id: d.id,
+        documentType: d.documentType,
+        originalName: d.originalName,
+        mimeType: d.mimeType,
+        fileSize: d.fileSize,
+        status: d.status,
+        createdAt: d.createdAt,
+      })),
+    });
+  } catch (error) {
+    console.error('Track session error:', error);
+    res.status(500).json({ error: 'Failed to retrieve tracking session' });
+  }
+});
+
 // GET /api/service-requests - Admin: list all requests
 router.get('/', authenticateAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -652,7 +786,7 @@ router.get('/:id', authenticateAdmin, async (req: AuthRequest, res: Response): P
 // PATCH /api/service-requests/:id/status - Admin: update request status
 router.patch('/:id/status', authenticateAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { status, note } = req.body;
+    const { status, note, customerMessage } = req.body;
     const validStatuses = ['NEW', 'DOCUMENTS_REQUIRED', 'DOCUMENTS_RECEIVED', 'UNDER_REVIEW', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
 
     if (!status || !validStatuses.includes(status)) {
@@ -671,10 +805,50 @@ router.patch('/:id/status', authenticateAdmin, async (req: AuthRequest, res: Res
     }
 
     const oldStatus = existing.status;
+    const docMessage = (customerMessage || note)?.trim();
+
+    // Prepare formData JSON to securely persist customer-directed messages and email deduplication metadata
+    let formDataObj: Record<string, any> = {};
+    try {
+      if (existing.formData) {
+        formDataObj = JSON.parse(existing.formData);
+      }
+    } catch {
+      formDataObj = {};
+    }
+
+    const DEDUPE_WINDOW_MS = 15 * 60 * 1000; // 15-minute deduplication window for repeated saves
+    let shouldSendDocEmail = false;
+
+    if (status === 'DOCUMENTS_REQUIRED') {
+      if (docMessage) {
+        formDataObj.customerMessage = docMessage;
+      }
+      const customerEmail = existing.customer?.email?.trim();
+      if (customerEmail && isValidEmail(customerEmail)) {
+        const lastSentAt = formDataObj.lastDocRequestEmailSentAt ? Date.parse(formDataObj.lastDocRequestEmailSentAt) : 0;
+        const lastNote = formDataObj.lastDocRequestNote;
+        const isDuplicate =
+          existing.status === 'DOCUMENTS_REQUIRED' &&
+          lastNote === docMessage &&
+          Date.now() - lastSentAt < DEDUPE_WINDOW_MS;
+
+        if (isDuplicate) {
+          console.log(`[Status Update] Suppressed duplicate document request notification email for requestId=${existing.requestId}`);
+        } else {
+          shouldSendDocEmail = true;
+          formDataObj.lastDocRequestEmailSentAt = new Date().toISOString();
+          formDataObj.lastDocRequestNote = docMessage || '';
+        }
+      }
+    }
 
     await prisma.serviceRequest.update({
       where: { id: req.params.id as string },
-      data: { status },
+      data: {
+        status,
+        formData: Object.keys(formDataObj).length > 0 ? JSON.stringify(formDataObj) : existing.formData,
+      },
     });
 
     // Create status history
@@ -683,12 +857,12 @@ router.patch('/:id/status', authenticateAdmin, async (req: AuthRequest, res: Res
         serviceRequestId: req.params.id as string,
         oldStatus,
         newStatus: status,
-        note,
+        note: docMessage || note,
         changedBy: req.admin!.id,
       },
     });
 
-    // Create an AdminNote if note is provided, so customer sees it
+    // Create an AdminNote if note is provided, keeping internal audit trail
     if (note) {
       await prisma.adminNote.create({
         data: {
@@ -720,6 +894,34 @@ router.patch('/:id/status', authenticateAdmin, async (req: AuthRequest, res: Res
         message: `Your ${existing.service.name} request (${existing.requestId}) status has been updated to: ${status.replace(/_/g, ' ')}`,
       },
     });
+
+    // Dispatch deduplicated customer notification email for document requests
+    if (shouldSendDocEmail && existing.customer?.email) {
+      const recipientEmail = existing.customer.email.trim();
+      const trackingUrl = `${config.frontendUrl}/track?requestId=${encodeURIComponent(existing.requestId)}`;
+      const emailContent = renderDocumentRequestEmail({
+        customerName: existing.customer.name,
+        requestId: existing.requestId,
+        serviceName: existing.service?.name || 'Service',
+        note: docMessage || 'Please upload the required documents.',
+        trackingUrl,
+      });
+
+      try {
+        const sendResult = await sendEmail({
+          to: recipientEmail,
+          subject: emailContent.subject,
+          html: emailContent.html,
+          text: emailContent.text,
+        });
+
+        if (!sendResult.success) {
+          console.error(`Failed to send document request notification email for ${existing.requestId}:`, sendResult.error);
+        }
+      } catch (emailErr) {
+        console.error(`Document request email dispatch error for ${existing.requestId}:`, emailErr);
+      }
+    }
 
     res.json({ message: 'Status updated successfully', oldStatus, newStatus: status });
   } catch (error) {
