@@ -60,7 +60,14 @@ export const corsOptions: cors.CorsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Upload-Token', 'x-upload-token'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Upload-Token',
+    'x-upload-token',
+    'X-Tracking-Token',
+    'x-tracking-token',
+  ],
   maxAge: 86400, // 24 hours preflight cache
 };
 
