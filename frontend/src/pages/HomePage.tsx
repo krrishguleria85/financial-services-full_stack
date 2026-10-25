@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, ShieldCheck, Shield, FileText, Calculator, Building, MessageCircle, HeartPulse, Award, Calendar, ChevronRight, Users, TrendingUp, Headphones } from 'lucide-react';
 import api from '../lib/api';
 import type { Service, YouTubeVideo } from '../types';
+import DeadlineTicker from '../components/home/DeadlineTicker';
+import { SOCIAL_PLATFORMS, SocialIcon } from '../components/common/SocialIcons';
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -12,6 +14,8 @@ const HomePage = () => {
   // const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
   const [videos, setVideos] = useState<YouTubeVideo[]>([]);
   const [feedVideos, setFeedVideos] = useState<any[]>([]);
+  const [isFeedLoading, setIsFeedLoading] = useState(true);
+  const [feedError, setFeedError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -20,22 +24,34 @@ const HomePage = () => {
           api.get('/settings').catch(() => ({ data: {} })),
           api.get('/services').catch(() => ({ data: [] })),
           api.get('/videos').catch(() => ({ data: [] })),
-          fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://www.youtube.com/feeds/videos.xml?channel_id=UCKV2OmS9KmhRUzeMd4g46Dg&_=' + new Date().getTime())}`)
-            .then(res => res.json())
-            .catch(() => ({ status: 'error', items: [] }))
+          api.get('/videos/feed').catch((err) => {
+            console.warn('Failed to load YouTube feed from backend:', err);
+            return { data: { status: 'error', items: [] } };
+          }),
         ]);
         setSettings(settingsRes.data || {});
         setServices((servicesRes.data || []).slice(0, 6)); // Top 6 services
         setVideos((videosRes.data || []).slice(0, 3));
-        if (feedRes?.status === 'ok') {
-          setFeedVideos(feedRes.items || []);
+
+        const feedItems = feedRes?.data?.items || (Array.isArray(feedRes?.data) ? feedRes.data : []);
+        if (Array.isArray(feedItems) && feedItems.length > 0) {
+          setFeedVideos(feedItems);
+          setFeedError(null);
+        } else if (feedRes?.data?.status === 'error') {
+          setFeedError('Unable to load latest shorts');
         }
       } catch (error) {
         console.error('Error fetching home data', error);
+      } finally {
+        setIsFeedLoading(false);
       }
     };
     fetchData();
   }, []);
+
+  const configuredDanceSocials = SOCIAL_PLATFORMS.filter((platform) =>
+    Boolean(settings[platform.key]?.trim())
+  );
 
   const getIcon = (iconName?: string) => {
     switch (iconName) {
@@ -50,53 +66,10 @@ const HomePage = () => {
 
   // Non-blocking loading allows immediate render of hero and assets
 
-  const deadlineColors = [
-    { bg: 'from-amber-500/20 to-orange-600/20', border: 'border-amber-500/30', shadow: 'shadow-[0_0_15px_rgba(245,158,11,0.2)]', dot: 'bg-amber-500', ping: 'bg-amber-400', text: 'text-amber-50' },
-    { bg: 'from-emerald-500/20 to-cyan-500/20', border: 'border-emerald-500/30', shadow: 'shadow-[0_0_15px_rgba(16,185,129,0.2)]', dot: 'bg-emerald-500', ping: 'bg-emerald-400', text: 'text-emerald-50' },
-    { bg: 'from-blue-500/20 to-indigo-600/20', border: 'border-blue-500/30', shadow: 'shadow-[0_0_15px_rgba(59,130,246,0.2)]', dot: 'bg-blue-500', ping: 'bg-blue-400', text: 'text-blue-50' },
-    { bg: 'from-rose-500/20 to-pink-600/20', border: 'border-rose-500/30', shadow: 'shadow-[0_0_15px_rgba(244,63,94,0.2)]', dot: 'bg-rose-500', ping: 'bg-rose-400', text: 'text-rose-50' },
-  ];
-
   return (
     <div className="flex flex-col">
-      {/* Deadlines Marquee */}
-      {settings.deadlinesMarquee && (
-        <div className="bg-slate-950 border-b border-white/10 overflow-hidden relative z-20 py-3 flex items-center shadow-inner">
-          <div className="whitespace-nowrap animate-marquee inline-block">
-            <div className="flex items-center gap-24 md:gap-48 px-4">
-              {settings.deadlinesMarquee.split(/[•|]/).filter(Boolean).map((deadline, idx) => {
-                const color = deadlineColors[idx % deadlineColors.length];
-                return (
-                  <div key={idx} className={`inline-flex items-center gap-3 bg-gradient-to-r ${color.bg} border ${color.border} px-6 py-2 rounded-full ${color.shadow} backdrop-blur-sm`}>
-                    <span className="relative flex h-3 w-3">
-                      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${color.ping} opacity-75`}></span>
-                      <span className={`relative inline-flex rounded-full h-3 w-3 ${color.dot}`}></span>
-                    </span>
-                    <span className={`${color.text} font-bold tracking-wide text-sm md:text-base uppercase`}>
-                      {deadline.trim()}
-                    </span>
-                  </div>
-                );
-              })}
-              {/* Duplicate for seamless visual flow if needed */}
-              {settings.deadlinesMarquee.split(/[•|]/).filter(Boolean).map((deadline, idx) => {
-                const color = deadlineColors[idx % deadlineColors.length];
-                return (
-                  <div key={`dup-${idx}`} className={`hidden md:inline-flex items-center gap-3 bg-gradient-to-r ${color.bg} border ${color.border} px-6 py-2 rounded-full ${color.shadow} backdrop-blur-sm`}>
-                    <span className="relative flex h-3 w-3">
-                      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${color.ping} opacity-75`}></span>
-                      <span className={`relative inline-flex rounded-full h-3 w-3 ${color.dot}`}></span>
-                    </span>
-                    <span className={`${color.text} font-bold tracking-wide text-sm md:text-base uppercase`}>
-                      {deadline.trim()}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Animated Deadline Ticker */}
+      <DeadlineTicker marqueeText={settings.deadlinesMarquee} />
 
       {/* Hero Section */}
       <section className="bg-gradient-to-br from-[#040e20] via-[#081a38] to-[#040e20] text-white py-4 sm:py-6 lg:py-6 xl:py-8 px-4 sm:px-6 lg:px-8 overflow-hidden relative lg:min-h-[calc(100vh-5rem)] lg:flex lg:flex-col lg:justify-center">
@@ -716,34 +689,38 @@ const HomePage = () => {
       {/* Social Media Highlight */}
       <section className="bg-slate-900 py-12 border-t border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-8">
-            <div className="text-center md:text-left">
-              <h3 className="text-2xl font-bold text-white mb-2">Beyond Finance: My Passion for Dance</h3>
-              <p className="text-slate-400 max-w-2xl">
+          <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
+            <div className="text-center lg:text-left">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold mb-3">
+                Creative Expression & Passion
+              </div>
+              <h3 className="text-2xl sm:text-3xl font-extrabold text-white mb-2 tracking-tight">
+                Beyond Finance: <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-amber-200">My Passion for Dance</span>
+              </h3>
+              <p className="text-slate-400 max-w-2xl text-sm sm:text-base">
                 When I'm not helping you with ITR, GST, and Insurance, I'm expressing myself through dance.
-                Join my journey and check out my performances! Users can choose their path—finance or dance!
+                Join my journey and check out my creative performances, vlogs, and shorts across my profiles!
               </p>
             </div>
-            <div className="flex flex-shrink-0 gap-4">
-              <a
-                href="https://www.youtube.com/@rajeshguleria1973"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-500/50 px-6 py-3 rounded-xl font-bold transition-colors"
-              >
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" /></svg>
-                Subscribe
-              </a>
-              <a
-                href="https://www.instagram.com/guleria2877?stkn=MXQ5enFwazA1MHdxdw=="
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 bg-pink-600/10 hover:bg-pink-600/20 text-pink-500 border border-pink-500/50 px-6 py-3 rounded-xl font-bold transition-colors"
-              >
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z" /></svg>
-                Follow
-              </a>
-            </div>
+            {configuredDanceSocials.length > 0 && (
+              <div className="flex flex-wrap items-center justify-center lg:justify-end gap-3 flex-shrink-0">
+                {configuredDanceSocials.map((platform) => {
+                  const url = settings[platform.key]?.trim();
+                  return (
+                    <a
+                      key={platform.key}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all transform hover:-translate-y-0.5 shadow-md ${platform.colorClasses.badgeBg} ${platform.colorClasses.text} border ${platform.colorClasses.border} ${platform.colorClasses.hoverBg}`}
+                    >
+                      <SocialIcon platform={platform.platform} className="w-4 h-4 flex-shrink-0" />
+                      <span>{platform.buttonText}</span>
+                    </a>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -842,31 +819,90 @@ const HomePage = () => {
 
               {/* Dance Videos & Socials */}
               <div>
-                <h3 className="text-2xl font-bold mb-6 text-pink-400">Vlogs, Dance & Creative Shorts</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  {feedVideos.slice(0, 2).map((item, idx) => {
-                    const isShort = item.link.includes('/shorts/');
-                    return (
-                      <a key={idx} href={item.link} target="_blank" rel="noopener noreferrer" className={`block relative bg-slate-800 rounded-xl overflow-hidden group shadow-lg ${isShort ? 'aspect-[9/16]' : 'aspect-video'}`}>
-                        <img src={item.thumbnail} alt={item.title} className="absolute inset-0 w-full h-full object-cover opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500" />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <svg className="w-12 h-12 mb-3 text-red-500 group-hover:scale-110 transition-transform drop-shadow-lg" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" /></svg>
-                        </div>
-                        <div className="absolute bottom-0 inset-x-0 p-3">
-                          <h4 className="text-white text-xs font-bold line-clamp-2 drop-shadow-md">{item.title}</h4>
-                        </div>
-                      </a>
-                    );
-                  })}
-
-                  {/* Fallback if no videos are found */}
-                  {feedVideos.length === 0 && (
-                    <div className="col-span-2 text-slate-500 text-sm py-8 text-center bg-slate-800/30 rounded-xl border border-slate-700/50">
-                      Loading latest shorts...
-                    </div>
-                  )}
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-2xl font-bold text-pink-400">Vlogs, Dance & Creative Shorts</h3>
+                  <a
+                    href={settings.youtubeChannelUrl || 'https://www.youtube.com/@rajeshguleria1973'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-semibold text-pink-400 hover:text-pink-300 transition-colors flex items-center gap-1"
+                  >
+                    <span>Visit Channel</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </a>
                 </div>
+
+                {isFeedLoading ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="aspect-[9/16] bg-slate-800/60 rounded-xl animate-pulse border border-slate-700/50 flex flex-col justify-end p-3">
+                      <div className="h-3 w-3/4 bg-slate-700/60 rounded mb-2" />
+                      <div className="h-2 w-1/2 bg-slate-700/40 rounded" />
+                    </div>
+                    <div className="aspect-[9/16] bg-slate-800/60 rounded-xl animate-pulse border border-slate-700/50 flex flex-col justify-end p-3">
+                      <div className="h-3 w-3/4 bg-slate-700/60 rounded mb-2" />
+                      <div className="h-2 w-1/2 bg-slate-700/40 rounded" />
+                    </div>
+                  </div>
+                ) : feedVideos.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    {feedVideos.slice(0, 2).map((item, idx) => {
+                      const isShort = item.isShort || (item.link && item.link.includes('/shorts/'));
+                      return (
+                        <a
+                          key={item.id || idx}
+                          href={item.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block relative bg-slate-900 rounded-xl overflow-hidden group shadow-lg aspect-[9/16] border border-slate-800 hover:border-pink-500/40 transition-all duration-300"
+                        >
+                          <img
+                            src={item.thumbnail}
+                            alt={item.title}
+                            className="absolute inset-0 w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500"
+                            loading="lazy"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/30 to-transparent pointer-events-none" />
+
+                          {/* Hover Play Button */}
+                          <div className="absolute inset-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="w-12 h-12 rounded-full bg-red-600/90 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                              <svg className="w-6 h-6 ml-0.5 fill-current" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            </div>
+                            <span className="text-[11px] font-semibold text-white mt-2 bg-black/60 px-2 py-0.5 rounded-full">
+                              {isShort ? 'Watch Short' : 'Watch Video'}
+                            </span>
+                          </div>
+
+                          {/* Video Title & Badge */}
+                          <div className="absolute bottom-0 inset-x-0 p-3 pointer-events-none">
+                            <div className="inline-flex items-center gap-1 bg-red-600/90 text-white text-[10px] font-bold px-1.5 py-0.5 rounded mb-1.5 uppercase tracking-wider">
+                              <svg className="w-2.5 h-2.5 fill-current" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" /></svg>
+                              {isShort ? 'Short' : 'Video'}
+                            </div>
+                            <h4 className="text-white text-xs font-bold line-clamp-2 drop-shadow-md leading-snug">
+                              {item.title}
+                            </h4>
+                          </div>
+                        </a>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-slate-400 text-sm p-6 text-center bg-slate-900/60 rounded-xl border border-slate-800">
+                    <p className="mb-3 text-slate-300 font-medium">{feedError || 'Explore latest creative dance and vlogs directly on YouTube'}</p>
+                    <a
+                      href={settings.youtubeChannelUrl || 'https://www.youtube.com/@rajeshguleria1973'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-all shadow-md"
+                    >
+                      <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" /></svg>
+                      Watch on YouTube
+                    </a>
+                  </div>
+                )}
               </div>
             </div>
           </div>
