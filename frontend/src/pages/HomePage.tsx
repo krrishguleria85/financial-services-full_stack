@@ -5,9 +5,11 @@ import api from '../lib/api';
 import type { Service, YouTubeVideo } from '../types';
 import DeadlineTicker from '../components/home/DeadlineTicker';
 import { SOCIAL_PLATFORMS, SocialIcon } from '../components/common/SocialIcons';
+import PhotoLightboxModal, { RECOGNITION_PHOTOS, type RecognitionPhoto } from '../components/home/PhotoLightboxModal';
 
 const HomePage = () => {
   const navigate = useNavigate();
+  const [activePhoto, setActivePhoto] = useState<RecognitionPhoto | null>(null);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [services, setServices] = useState<Service[]>([]);
   // Testimonials placeholder for future use
@@ -77,13 +79,13 @@ const HomePage = () => {
         <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[550px] bg-gradient-to-tr from-amber-500/10 via-blue-600/10 to-transparent rounded-full blur-3xl pointer-events-none -z-10" />
 
         <div className="max-w-[1440px] mx-auto w-full">
-          
+
           {/* Desktop 3-Column Composition (Matches exact 34% / 42% / 24% Reference Layout) */}
           <div className="hidden lg:grid lg:grid-cols-12 gap-5 xl:gap-6 items-stretch">
-            
+
             {/* Column 1 — Left: Text and Calls to Action (~34% Width) */}
             <div className="lg:col-span-4 xl:col-span-4 h-[560px] lg:h-[580px] xl:h-[600px] flex flex-col justify-between py-1">
-              
+
               {/* Authorized Agent Badges with Official Logos and Chevrons */}
               <div className="flex flex-wrap gap-2">
                 <div className="inline-flex items-center gap-2 bg-blue-950/80 text-blue-100 border border-blue-500/40 px-3 py-1.5 rounded-full font-medium text-xs xl:text-sm backdrop-blur-sm shadow-sm group">
@@ -105,7 +107,7 @@ const HomePage = () => {
 
               {/* Main Headline */}
               <h1 className="text-2xl sm:text-3xl xl:text-4xl font-extrabold tracking-tight leading-[1.15]">
-                Your Trusted Partner for <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500">LIC, Star Health Insurance, Tax & GST</span> Services
+                Your Trusted Partner for <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500">LIC, Star Health Insurance, Income Tax & GST</span> Services
               </h1>
 
               {/* Description */}
@@ -115,7 +117,7 @@ const HomePage = () => {
 
               {/* 4 Service Buttons (2x2 Grid with Logos & Chevrons) */}
               <div className="grid grid-cols-2 gap-2.5 xl:gap-3 pt-0.5">
-                
+
                 {/* 1. LIC Policies */}
                 <Link
                   to="/services/lic-insurance-services?request=true"
@@ -220,7 +222,7 @@ const HomePage = () => {
                   className="absolute inset-0 w-full h-full object-cover object-top"
                   loading="eager"
                 />
-                
+
                 {/* Refined Dark-Navy Bottom Gradient Overlay */}
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/30 to-transparent pointer-events-none" />
 
@@ -257,9 +259,21 @@ const HomePage = () => {
 
             {/* Column 3 — Right: Recognition & Awards Rail (~24% Width) */}
             <div className="lg:col-span-3 xl:col-span-3 h-[560px] lg:h-[580px] xl:h-[600px] flex flex-col justify-between gap-2.5 overflow-hidden">
-              
+
               {/* Top Photo Card: Group Trophy Milestone */}
-              <div className="h-[148px] xl:h-[158px] bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 p-2 shadow-xl shadow-slate-950/80 flex flex-col justify-between hover:border-amber-400/70 transition-all group shrink-0 overflow-hidden">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setActivePhoto(RECOGNITION_PHOTOS.milestone)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setActivePhoto(RECOGNITION_PHOTOS.milestone);
+                  }
+                }}
+                aria-label="View full size photo: A Proud LIC Milestone"
+                className="h-[148px] xl:h-[158px] bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 p-2 shadow-xl shadow-slate-950/80 flex flex-col justify-between hover:border-amber-400/70 transition-all group shrink-0 overflow-hidden cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400/60"
+              >
                 <div className="relative w-full h-[102px] xl:h-[110px] rounded-xl overflow-hidden bg-slate-950 border border-white/10">
                   <img
                     src="/images/lic-milestone.jpg"
@@ -288,7 +302,19 @@ const HomePage = () => {
               </div>
 
               {/* Middle Photo Card: Presentation Ceremony */}
-              <div className="h-[148px] xl:h-[158px] bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 p-2 shadow-xl shadow-slate-950/80 flex flex-col justify-between hover:border-amber-400/70 transition-all group shrink-0 overflow-hidden">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setActivePhoto(RECOGNITION_PHOTOS.recognition)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setActivePhoto(RECOGNITION_PHOTOS.recognition);
+                  }
+                }}
+                aria-label="View full size photo: LIC Recognition"
+                className="h-[148px] xl:h-[158px] bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 p-2 shadow-xl shadow-slate-950/80 flex flex-col justify-between hover:border-amber-400/70 transition-all group shrink-0 overflow-hidden cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400/60"
+              >
                 <div className="relative w-full h-[102px] xl:h-[110px] rounded-xl overflow-hidden bg-slate-950 border border-white/10">
                   <img
                     src="/images/lic-presentation.jpg"
@@ -318,31 +344,70 @@ const HomePage = () => {
 
               {/* Bottom Row: 2 Separate Award Cards Side-by-Side */}
               <div className="flex-1 min-h-0 grid grid-cols-2 gap-2.5 overflow-hidden">
-                
-                {/* Card A: LIC 70 Years Emblem */}
-                <div className="bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 p-2 shadow-xl shadow-slate-950/80 flex flex-col items-center justify-center text-center hover:border-amber-400/70 transition-all overflow-hidden">
-                  <div className="w-14 h-14 xl:w-16 xl:h-16 rounded-full bg-slate-950 p-1 border-2 border-amber-400/50 overflow-hidden shrink-0 shadow-inner flex items-center justify-center">
-                    <img
-                      src="/images/lic-70-years.png"
-                      alt="LIC 70 Years Anniversary"
-                      className="w-full h-full object-contain"
-                    />
+
+                {/* Card A: LIC 70 Years Anniversary & Official Logo */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setActivePhoto(RECOGNITION_PHOTOS.anniversary70)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setActivePhoto(RECOGNITION_PHOTOS.anniversary70);
+                    }
+                  }}
+                  aria-label="View full size photo: LIC 70 Years"
+                  className="bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 p-2 shadow-xl shadow-slate-950/80 flex flex-col justify-between hover:border-amber-400/70 transition-all overflow-hidden group cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400/60"
+                >
+                  <div className="relative w-full flex-1 min-h-0 rounded-xl overflow-hidden bg-gradient-to-b from-slate-800/60 via-slate-900/90 to-slate-950 flex flex-col items-center justify-center gap-1.5 xl:gap-2 p-1.5 xl:p-2 border border-white/5">
+                    {/* Clearly visible Official LIC Logo */}
+                    <div className="bg-white rounded-lg px-2.5 py-1 shadow-sm border border-amber-400/30 flex items-center justify-center shrink-0">
+                      <img
+                        src="/logos/lic-official.png"
+                        alt="Life Insurance Corporation of India"
+                        className="h-5.5 xl:h-6.5 w-auto object-contain"
+                      />
+                    </div>
+
+                    {/* 70 Years Anniversary Emblem */}
+                    <div className="w-[58px] h-[58px] xl:w-[66px] xl:h-[66px] rounded-full bg-slate-950/90 p-0.5 border-2 border-amber-400/60 shadow-[0_0_12px_rgba(245,158,11,0.25)] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform duration-300">
+                      <img
+                        src="/images/lic-70-years.png"
+                        alt="LIC 70 Years Anniversary"
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
                   </div>
-                  <span className="block text-xs xl:text-sm font-extrabold text-amber-400 uppercase tracking-wider mt-2">
-                    70 YEARS
-                  </span>
-                  <span className="block text-[9px] xl:text-[10px] text-slate-300 font-medium leading-tight mt-0.5">
-                    Our Journey, Your Trust
-                  </span>
+
+                  <div className="pt-1.5 pb-0.5 text-center border-t border-amber-500/20 shrink-0">
+                    <span className="block text-[10px] xl:text-[11px] font-extrabold text-amber-300 uppercase tracking-wider">
+                      70 YEARS
+                    </span>
+                    <span className="block text-[8px] xl:text-[9px] text-slate-200 uppercase tracking-wider font-semibold">
+                      Our Journey, Your Trust
+                    </span>
+                  </div>
                 </div>
 
                 {/* Card B: LIC ZM's Trophy 2026 */}
-                <div className="bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 p-2 shadow-xl shadow-slate-950/80 flex flex-col justify-between hover:border-amber-400/70 transition-all overflow-hidden">
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setActivePhoto(RECOGNITION_PHOTOS.trophy)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setActivePhoto(RECOGNITION_PHOTOS.trophy);
+                    }
+                  }}
+                  aria-label="View full size photo: LIC ZM’s Trophy 2026"
+                  className="bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 p-2 shadow-xl shadow-slate-950/80 flex flex-col justify-between hover:border-amber-400/70 transition-all overflow-hidden group cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400/60"
+                >
                   <div className="relative w-full flex-1 min-h-0 rounded-xl overflow-hidden bg-gradient-to-b from-slate-800/60 via-slate-900/90 to-slate-950 flex items-center justify-center p-1.5 border border-white/5">
                     <img
                       src="/images/trophy-cutout.png"
                       alt="LIC ZM's Trophy 2026 - North Zone"
-                      className="h-full w-auto max-w-full object-contain drop-shadow-[0_8px_16px_rgba(0,0,0,0.85)] filter contrast-105"
+                      className="h-full w-auto max-w-full object-contain drop-shadow-[0_8px_16px_rgba(0,0,0,0.85)] filter contrast-105 group-hover:scale-105 transition-transform duration-300"
                       loading="eager"
                     />
                   </div>
@@ -365,7 +430,7 @@ const HomePage = () => {
           {/* Bottom Value Proposition Ribbon (Compact, Elegant, and High-Readability) */}
           <div className="hidden lg:block mt-3.5 xl:mt-4 bg-gradient-to-r from-slate-950/90 via-slate-900/95 to-slate-950/90 border border-amber-500/30 rounded-xl px-4 py-2.5 shadow-lg backdrop-blur-md">
             <div className="grid grid-cols-4 gap-3 divide-x divide-white/10 items-center">
-              
+
               {/* 1. Insurance Solutions */}
               <div className="flex items-center gap-2.5 pr-2">
                 <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-400/35 flex items-center justify-center shrink-0">
@@ -415,7 +480,7 @@ const HomePage = () => {
 
           {/* Mobile / Tablet Responsive Stack (Ordered 1 -> 2 -> 3 -> 4) */}
           <div className="block lg:hidden space-y-6 max-w-lg mx-auto">
-            
+
             {/* 1. Heading, Description, Service Buttons, Trophy Strip */}
             <div className="space-y-4">
               <div className="flex flex-wrap gap-2">
@@ -560,7 +625,19 @@ const HomePage = () => {
 
             {/* 3. Recognition Photographs */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 p-2 shadow-xl flex flex-col justify-between">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setActivePhoto(RECOGNITION_PHOTOS.milestone)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setActivePhoto(RECOGNITION_PHOTOS.milestone);
+                  }
+                }}
+                aria-label="View full size photo: A Proud LIC Milestone"
+                className="bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 p-2 shadow-xl flex flex-col justify-between cursor-pointer hover:border-amber-400/70 transition-all focus:outline-none focus:ring-2 focus:ring-amber-400/60"
+              >
                 <div className="aspect-[4/3] rounded-xl overflow-hidden bg-slate-950 border border-white/10">
                   <img
                     src="/images/lic-milestone.jpg"
@@ -580,7 +657,19 @@ const HomePage = () => {
                 </div>
               </div>
 
-              <div className="bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 p-2 shadow-xl flex flex-col justify-between">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setActivePhoto(RECOGNITION_PHOTOS.recognition)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setActivePhoto(RECOGNITION_PHOTOS.recognition);
+                  }
+                }}
+                aria-label="View full size photo: LIC Recognition"
+                className="bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 p-2 shadow-xl flex flex-col justify-between cursor-pointer hover:border-amber-400/70 transition-all focus:outline-none focus:ring-2 focus:ring-amber-400/60"
+              >
                 <div className="aspect-[4/3] rounded-xl overflow-hidden bg-slate-950 border border-white/10">
                   <img
                     src="/images/lic-presentation.jpg"
@@ -603,23 +692,59 @@ const HomePage = () => {
 
             {/* 4. LIC 70 Years Emblem and Trophy */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 p-2.5 shadow-xl flex flex-col items-center justify-center text-center">
-                <div className="w-14 h-14 rounded-full bg-slate-950 p-1 border-2 border-amber-400/50 overflow-hidden shrink-0 shadow-inner">
-                  <img
-                    src="/images/lic-70-years.png"
-                    alt="LIC 70 Years"
-                    className="w-full h-full object-contain"
-                  />
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setActivePhoto(RECOGNITION_PHOTOS.anniversary70)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setActivePhoto(RECOGNITION_PHOTOS.anniversary70);
+                  }
+                }}
+                aria-label="View full size photo: LIC 70 Years"
+                className="bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 p-2 shadow-xl flex flex-col justify-between cursor-pointer hover:border-amber-400/70 transition-all focus:outline-none focus:ring-2 focus:ring-amber-400/60"
+              >
+                <div className="relative w-full h-[120px] rounded-xl overflow-hidden bg-gradient-to-b from-slate-800/60 to-slate-950 flex flex-col items-center justify-center gap-1 p-1.5 border border-white/5">
+                  <div className="bg-white rounded-lg px-2 py-0.5 shadow-sm border border-amber-400/30 flex items-center justify-center shrink-0">
+                    <img
+                      src="/logos/lic-official.png"
+                      alt="Life Insurance Corporation of India"
+                      className="h-5 w-auto object-contain"
+                    />
+                  </div>
+                  {/* 70 Years Anniversary Emblem */}
+                  <div className="w-[50px] h-[50px] rounded-full bg-slate-950/90 p-0.5 border-2 border-amber-400/60 shadow-[0_0_10px_rgba(245,158,11,0.25)] flex items-center justify-center shrink-0">
+                    <img
+                      src="/images/lic-70-years.png"
+                      alt="LIC 70 Years"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
                 </div>
-                <span className="block text-xs font-extrabold text-amber-400 uppercase tracking-wider mt-2">
-                  70 YEARS
-                </span>
-                <span className="block text-[10px] text-slate-300 font-medium leading-tight mt-0.5">
-                  Our Journey, Your Trust
-                </span>
+                <div className="pt-1.5 text-center border-t border-amber-500/20">
+                  <span className="block text-[11px] font-extrabold text-amber-300 uppercase tracking-wider">
+                    70 YEARS
+                  </span>
+                  <span className="block text-[9px] text-slate-200 uppercase tracking-wider font-semibold">
+                    Our Journey, Your Trust
+                  </span>
+                </div>
               </div>
 
-              <div className="bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 p-2 shadow-xl flex flex-col justify-between">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setActivePhoto(RECOGNITION_PHOTOS.trophy)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setActivePhoto(RECOGNITION_PHOTOS.trophy);
+                  }
+                }}
+                aria-label="View full size photo: LIC ZM’s Trophy 2026"
+                className="bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 p-2 shadow-xl flex flex-col justify-between cursor-pointer hover:border-amber-400/70 transition-all focus:outline-none focus:ring-2 focus:ring-amber-400/60"
+              >
                 <div className="relative w-full h-[120px] rounded-xl overflow-hidden bg-gradient-to-b from-slate-800/60 to-slate-950 flex items-center justify-center p-1 border border-white/5">
                   <img
                     src="/images/trophy-cutout.png"
@@ -926,6 +1051,12 @@ const HomePage = () => {
           </div>
         </div>
       </section>
+
+      {/* Recognition Photo Full-Size Lightbox Modal */}
+      <PhotoLightboxModal
+        photo={activePhoto}
+        onClose={() => setActivePhoto(null)}
+      />
     </div>
   );
 };

@@ -121,9 +121,24 @@ const Footer = () => {
             </ul>
           </div>
         </div>
-
         <div className="pt-8 border-t border-slate-800 text-sm flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
-          <p>{settings.footerText || `© ${new Date().getFullYear()} Your Business Name. All rights reserved.`}</p>
+          <p className="flex flex-wrap items-center justify-center sm:justify-start gap-x-2 gap-y-1">
+            <span>{settings.footerText || `© ${new Date().getFullYear()} Your Business Name. All rights reserved.`}</span>
+            <span className="hidden sm:inline text-slate-600">•</span>
+            <span className="inline-flex items-center flex-wrap gap-1.5 text-slate-400">
+              Made by:{' '}
+              <span className="text-slate-200 font-medium">Krrish Guleria</span>
+              <span className="text-slate-600 mx-0.5">•</span>
+              <a
+                href="https://www.linkedin.com/in/krrishguleria/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-amber-400 hover:text-amber-300 font-medium underline underline-offset-2 transition-colors inline-flex items-center gap-0.5"
+              >
+                Connect on LinkedIn
+              </a>
+            </span>
+          </p>
           {configuredSocials.length > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-500 mr-1">Socials:</span>
