@@ -6,21 +6,25 @@ import type { YouTubeVideo } from '../types';
 const ChannelPage = () => {
   const [videos, setVideos] = useState<YouTubeVideo[]>([]);
   const [feedVideos, setFeedVideos] = useState<any[]>([]);
+  const [settings, setSettings] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [videosRes, _settingsRes, feedRes] = await Promise.all([
+        const [videosRes, settingsRes, feedRes] = await Promise.all([
           api.get('/videos').catch(() => ({ data: [] })),
           api.get('/settings').catch(() => ({ data: {} })),
-          fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://www.youtube.com/feeds/videos.xml?channel_id=UCKV2OmS9KmhRUzeMd4g46Dg&_=' + new Date().getTime())}`)
-            .then(res => res.json())
-            .catch(() => ({ status: 'error', items: [] }))
+          api.get('/videos/feed').catch((err) => {
+            console.warn('Failed to load feed videos on channel page:', err);
+            return { data: { status: 'error', items: [] } };
+          }),
         ]);
         setVideos(videosRes.data || []);
-        if (feedRes?.status === 'ok') {
-          setFeedVideos(feedRes.items || []);
+        setSettings(settingsRes.data || {});
+        const feedItems = feedRes?.data?.items || (Array.isArray(feedRes?.data) ? feedRes.data : []);
+        if (Array.isArray(feedItems)) {
+          setFeedVideos(feedItems);
         }
       } catch (error) {
         console.error('Failed to load videos', error);
@@ -42,13 +46,13 @@ const ChannelPage = () => {
           Whether you're looking for expert advice on tax planning and insurance, or want to enjoy my latest dance performances—we've got you covered!
         </p>
         
-        <a 
-          href="https://www.youtube.com/@rajeshguleria1973" 
-          target="_blank" 
+        <a
+          href={settings.youtubeChannelUrl || 'https://www.youtube.com/@rajeshguleria1973'}
+          target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center justify-center mt-2 px-8 py-4 border border-transparent text-lg font-bold rounded-xl text-white bg-red-600 hover:bg-red-700 shadow-xl hover:shadow-red-500/20 transition-all transform hover:-translate-y-1"
         >
-          Subscribe to @rajeshguleria1973 <ExternalLink className="ml-2 w-5 h-5" />
+          Subscribe to Channel <ExternalLink className="ml-2 w-5 h-5" />
         </a>
       </div>
 
@@ -56,7 +60,17 @@ const ChannelPage = () => {
       <div className="mb-20">
         <h2 className="text-3xl font-bold text-slate-900 mb-8 text-center">Recent Uploads (Vlogs, Dance & More)</h2>
         {feedVideos.length === 0 ? (
-           <div className="text-center text-slate-500 py-12">Loading recent videos...</div>
+          <div className="text-center text-slate-500 py-12 bg-slate-50 rounded-xl border border-slate-200">
+            <p className="mb-2 font-medium">No recent feed uploads available at the moment.</p>
+            <a
+              href="https://www.youtube.com/@rajeshguleria1973"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-red-600 hover:text-red-700 font-semibold text-sm underline"
+            >
+              Check directly on YouTube channel @rajeshguleria1973
+            </a>
+          </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
             {feedVideos.slice(0, 5).map((item, idx) => {

@@ -52,19 +52,19 @@ const Navbar = () => {
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
+        <div className="flex justify-between items-center h-[4.5rem] sm:h-20">
           
           {/* Brand Logo & Title */}
           <div className="flex items-center">
-            <Link to="/" className="flex items-center gap-3 group">
-              <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0 shadow-xs group-hover:bg-blue-100/70 transition-colors">
-                <Shield className="h-6 w-6 text-primary-600 shrink-0" />
+            <Link to="/" className="flex items-center gap-3 sm:gap-3.5 group">
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50/80 border border-blue-200/80 flex items-center justify-center shrink-0 shadow-xs group-hover:shadow-sm group-hover:border-blue-300 transition-all">
+                <Shield className="h-7 w-7 sm:h-8 sm:w-8 text-primary-600 shrink-0 group-hover:scale-105 transition-transform" strokeWidth={2.3} />
               </div>
-              <div className="flex flex-col">
-                <span className="font-extrabold text-lg sm:text-xl tracking-tight text-slate-900 leading-tight group-hover:text-primary-700 transition-colors">
+              <div className="flex flex-col justify-center">
+                <span className="font-extrabold text-xl sm:text-2xl tracking-tight text-slate-900 leading-none group-hover:text-primary-700 transition-colors">
                   {businessName === 'Your Business Name' ? 'Rajesh Guleria' : businessName}
                 </span>
-                <span className="text-[10px] sm:text-xs text-slate-500 font-medium tracking-tight">
+                <span className="text-[11px] sm:text-[13px] text-slate-500 font-medium tracking-tight mt-1">
                   Financial & Insurance Consultant
                 </span>
               </div>

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Shield, Mail, Phone, MapPin, MessageCircle } from 'lucide-react';
 import api from '../../lib/api';
+import { SOCIAL_PLATFORMS, SocialIcon } from '../common/SocialIcons';
 
 const Footer = () => {
   const [settings, setSettings] = useState<Record<string, string>>({});
@@ -18,6 +19,10 @@ const Footer = () => {
     fetchSettings();
   }, []);
 
+  const configuredSocials = SOCIAL_PLATFORMS.filter(
+    (p) => Boolean(settings[p.key]?.trim())
+  );
+
   return (
     <footer className="bg-slate-900 text-slate-300 py-12 mt-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -31,6 +36,33 @@ const Footer = () => {
             <p className="text-sm text-slate-400">
               {settings.businessDescription || 'Professional assistance for Insurance, Tax & GST Services.'}
             </p>
+
+            {/* Configured Social Profiles */}
+            {configuredSocials.length > 0 && (
+              <div className="pt-2">
+                <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2.5">
+                  Follow Us
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {configuredSocials.map((platform) => {
+                    const url = settings[platform.key]?.trim();
+                    return (
+                      <a
+                        key={platform.key}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`Follow on ${platform.label}`}
+                        title={platform.label}
+                        className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-200 border border-slate-700/80 bg-slate-800/80 hover:scale-105 hover:border-amber-400/50 ${platform.colorClasses.hoverBg} text-slate-300 hover:text-white`}
+                      >
+                        <SocialIcon platform={platform.platform} className="w-4 h-4" />
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Quick Links */}
@@ -90,8 +122,29 @@ const Footer = () => {
           </div>
         </div>
 
-        <div className="pt-8 border-t border-slate-800 text-sm text-center">
+        <div className="pt-8 border-t border-slate-800 text-sm flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
           <p>{settings.footerText || `© ${new Date().getFullYear()} Your Business Name. All rights reserved.`}</p>
+          {configuredSocials.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 mr-1">Socials:</span>
+              {configuredSocials.map((platform) => {
+                const url = settings[platform.key]?.trim();
+                return (
+                  <a
+                    key={platform.key}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={platform.label}
+                    title={platform.label}
+                    className="p-1.5 rounded-md text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors"
+                  >
+                    <SocialIcon platform={platform.platform} className="w-4 h-4" />
+                  </a>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </footer>

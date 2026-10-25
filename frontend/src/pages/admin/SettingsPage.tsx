@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import { Save, Building2, Share2, Info } from 'lucide-react';
+import { Save, Building2, Share2, Info, ExternalLink } from 'lucide-react';
 import api from '../../lib/api';
+import { SOCIAL_PLATFORMS, SocialIcon } from '../../components/common/SocialIcons';
 
 const SettingsPage = () => {
   const [settings, setSettings] = useState<Record<string, string>>({
@@ -15,6 +16,8 @@ const SettingsPage = () => {
     youtubeChannelUrl: '',
     instagramUrl: '',
     facebookUrl: '',
+    snapchatUrl: '',
+    mojUrl: '',
     businessDescription: '',
     footerText: '',
     disclaimer: ''
@@ -44,13 +47,32 @@ const SettingsPage = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Client-side URL validation for social platforms
+    for (const item of SOCIAL_PLATFORMS) {
+      const val = settings[item.key]?.trim();
+      if (val) {
+        try {
+          const parsed = new URL(val);
+          if (!['http:', 'https:'].includes(parsed.protocol)) {
+            toast.error(`${item.label} URL must start with http:// or https://`);
+            return;
+          }
+        } catch {
+          toast.error(`Please enter a valid web URL for ${item.label}`);
+          return;
+        }
+      }
+    }
+
     setIsSaving(true);
     try {
       await api.put('/settings', settings);
       toast.success('Settings updated successfully');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to update settings', error);
-      toast.error('Failed to update settings');
+      const msg = error?.response?.data?.error || 'Failed to update settings';
+      toast.error(msg);
     } finally {
       setIsSaving(false);
     }
@@ -173,40 +195,63 @@ const SettingsPage = () => {
 
         {/* Social Links */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="bg-slate-50 p-4 border-b border-slate-200 flex items-center">
-            <Share2 className="w-5 h-5 text-primary-600 mr-2" />
-            <h2 className="text-lg font-semibold text-slate-800">Social Media & Links</h2>
+          <div className="bg-slate-50 p-4 border-b border-slate-200 flex items-center justify-between">
+            <div className="flex items-center">
+              <Share2 className="w-5 h-5 text-primary-600 mr-2" />
+              <h2 className="text-lg font-semibold text-slate-800">Social Media & Public Profiles</h2>
+            </div>
+            <span className="text-xs text-slate-500 hidden sm:inline">
+              Leave empty to automatically hide links from homepage and footer
+            </span>
           </div>
-          <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-slate-700">YouTube Channel URL</label>
-              <input 
-                type="url" 
-                name="youtubeChannelUrl"
-                value={settings.youtubeChannelUrl || ''}
-                onChange={handleChange}
-                className="input-field w-full"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-slate-700">Instagram URL</label>
-              <input 
-                type="url" 
-                name="instagramUrl"
-                value={settings.instagramUrl || ''}
-                onChange={handleChange}
-                className="input-field w-full"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-slate-700">Facebook URL</label>
-              <input 
-                type="url" 
-                name="facebookUrl"
-                value={settings.facebookUrl || ''}
-                onChange={handleChange}
-                className="input-field w-full"
-              />
+          <div className="p-6">
+            <p className="text-sm text-slate-600 mb-6">
+              Centrally manage the social media profiles displayed across your website (including the footer and the "Beyond Finance: My Passion for Dance" section). Configured links open in a new tab; unconfigured profiles are hidden.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {SOCIAL_PLATFORMS.map((platform) => {
+                const urlValue = settings[platform.key] || '';
+                const isConfigured = Boolean(urlValue.trim());
+
+                return (
+                  <div key={platform.key} className="space-y-2 p-4 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white transition-colors">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className={`p-1.5 rounded-lg ${platform.colorClasses.badgeBg} ${platform.colorClasses.text}`}>
+                          <SocialIcon platform={platform.platform} className="w-4 h-4" />
+                        </span>
+                        <label className="text-sm font-semibold text-slate-800">
+                          {platform.label}
+                        </label>
+                      </div>
+                      {isConfigured && (
+                        <a
+                          href={urlValue}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1 font-medium"
+                          title="Preview profile link in new tab"
+                        >
+                          <span>Test</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
+                    <input
+                      type="url"
+                      name={platform.key}
+                      value={urlValue}
+                      onChange={handleChange}
+                      className="input-field w-full text-sm"
+                      placeholder={platform.placeholder}
+                    />
+                    <p className="text-[11px] text-slate-400">
+                      {isConfigured ? 'Active on website' : 'Unconfigured (hidden from visitors)'}
+                    </p>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

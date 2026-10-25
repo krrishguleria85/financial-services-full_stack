@@ -142,6 +142,8 @@ async function main() {
     youtubeChannelUrl: 'https://www.youtube.com/@rajeshguleria1973',
     instagramUrl: 'https://www.instagram.com/guleria2877',
     facebookUrl: '',
+    snapchatUrl: '',
+    mojUrl: '',
     businessDescription: 'We provide trusted and professional assistance for LIC/Insurance services, Income Tax Return filing, GST registration & returns, and comprehensive financial consultation. With years of experience helping individuals and businesses, we make complex financial processes simple and hassle-free.',
     footerText: '© 2026 Rajesh Guleria Official. All rights reserved.',
     disclaimer: 'This website provides professional assistance and consultation services. It is not an official website of LIC, the Income Tax Department, GST Portal, or any government authority.',
